@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Data Scraping Form</title>
+</head>
+<body>
+    <h1>Data Scraping Form</h1>
+    <form id="scrapeForm">
+        <label for="url">URL:</label>
+        <input type="url" id="url" name="url" required placeholder="Enter the URL"><br><br>
+
+        <label for="schemaType">Select Schema Type:</label>
+        <select id="schemaType" name="schemaType" required>
+            <option value="table">Table</option>
+            <option value="image">Image</option>
+            <option value="html">HTML Content</option>
+        </select><br><br>
+
+        <label for="columns">If Schema Type is 'Table', enter Column Names (comma separated):</label>
+        <input type="text" id="columns" name="columns" placeholder="e.g., Product Name, Price, Availability"><br><br>
+
+        <button type="submit">Start Scraping</button>
+    </form>
+
+    <h2>Result</h2>
+    <pre id="result"></pre>
+
+    <script>
+        document.getElementById('scrapeForm').addEventListener('submit', async (event) => {
+            event.preventDefault();
+
+            const url = document.getElementById('url').value;
+            const schemaType = document.getElementById('schemaType').value;
+            const columns = document.getElementById('columns').value.split(',');
+
+            const requestData = {
+                url: url,
+                schema: {
+                    type: schemaType,
+                    columns: columns.map(col => col.trim())
+                }
+            };
+
+            try {
+                const response = await fetch('http://localhost:8000/process_data/', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(requestData)
+                });
+
+                const data = await response.json();
+                document.getElementById('result').textContent = JSON.stringify(data, null, 2);
+            } catch (error) {
+                document.getElementById('result').textContent = `Error: ${error.message}`;
+            }
+        });
+    </script>
+</body>
+</html>
