@@ -3,61 +3,196 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Data Scraping Form</title>
+    <title>Scraping Dashboard</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            min-height: 100vh;
+            margin: 0;
+        }
+        .sidebar {
+            width: 250px;
+            background-color: #f4f4f4;
+            padding: 20px;
+            border-right: 1px solid #ddd;
+            position: fixed;
+            top: 0;
+            left: 0;
+            bottom: 0;
+            overflow-y: auto;
+        }
+        .sidebar h2 {
+            margin-top: 0;
+        }
+        .main-content {
+            margin-left: 260px;
+            padding: 20px;
+            flex-grow: 1;
+        }
+        .progress-bar {
+            width: 100%;
+            background-color: #f3f3f3;
+            border-radius: 5px;
+            margin-bottom: 10px;
+            height: 20px;
+        }
+        .progress-bar-fill {
+            height: 100%;
+            text-align: center;
+            color: white;
+            border-radius: 5px;
+        }
+        .input-container {
+            margin-bottom: 20px;
+        }
+        .history-list {
+            list-style: none;
+            padding: 0;
+        }
+        .history-item {
+            padding: 8px 0;
+            border-bottom: 1px solid #ddd;
+        }
+        .history-item span {
+            display: block;
+            font-weight: bold;
+        }
+        .download-btn {
+            margin-top: 10px;
+            padding: 10px 20px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+        .download-btn:hover {
+            background-color: #45a049;
+        }
+    </style>
 </head>
 <body>
-    <h1>Data Scraping Form</h1>
-    <form id="scrapeForm">
-        <label for="url">URL:</label>
-        <input type="url" id="url" name="url" required placeholder="Enter the URL"><br><br>
 
-        <label for="schemaType">Select Schema Type:</label>
-        <select id="schemaType" name="schemaType" required>
-            <option value="table">Table</option>
-            <option value="image">Image</option>
-            <option value="html">HTML Content</option>
-        </select><br><br>
+    <div class="sidebar">
+        <h2>History</h2>
+        <ul class="history-list" id="history-list">
+            <!-- History items will be populated here -->
+        </ul>
+    </div>
 
-        <label for="columns">If Schema Type is 'Table', enter Column Names (comma separated):</label>
-        <input type="text" id="columns" name="columns" placeholder="e.g., Product Name, Price, Availability"><br><br>
+    <div class="main-content">
+        <h1>Scraping Dashboard</h1>
 
-        <button type="submit">Start Scraping</button>
-    </form>
+        <div class="input-container">
+            <label for="urls">URLs (comma separated):</label>
+            <input type="text" id="urls" placeholder="Enter URLs">
+        </div>
 
-    <h2>Result</h2>
-    <pre id="result"></pre>
+        <div class="input-container">
+            <label for="schema">Select Theme:</label>
+            <select id="schema">
+                <option value="table">Table</option>
+                <option value="image">Image</option>
+                <option value="html">HTML</option>
+                <option value="pdf">PDF</option>
+            </select>
+        </div>
+
+        <button onclick="submitUrls()">Submit</button>
+
+        <h2>Progress</h2>
+        <div id="progress-bars">
+            <!-- Progress bars will be dynamically added here -->
+        </div>
+
+        <div id="output"></div>
+    </div>
 
     <script>
-        document.getElementById('scrapeForm').addEventListener('submit', async (event) => {
-            event.preventDefault();
-
-            const url = document.getElementById('url').value;
-            const schemaType = document.getElementById('schemaType').value;
-            const columns = document.getElementById('columns').value.split(',');
+        async function submitUrls() {
+            const urls = document.getElementById('urls').value.split(',');
+            const schema = document.getElementById('schema').value;
 
             const requestData = {
-                url: url,
-                schema: {
-                    type: schemaType,
-                    columns: columns.map(col => col.trim())
-                }
+                urls: urls,
+                data_schema: { type: schema, columns: [] }
             };
 
-            try {
-                const response = await fetch('http://localhost:8000/process_data/', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify(requestData)
-                });
+            const response = await fetch('/process-data/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(requestData)
+            });
 
-                const data = await response.json();
-                document.getElementById('result').textContent = JSON.stringify(data, null, 2);
-            } catch (error) {
-                document.getElementById('result').textContent = `Error: ${error.message}`;
+            const data = await response.json();
+            console.log(data);
+
+            if (response.status === 200) {
+                // Start polling for progress updates
+                urls.forEach((url, index) => {
+                    createProgressBar(url, index);
+                    pollProgressBar(url, index);
+                });
             }
-        });
+        }
+
+        function createProgressBar(url, index) {
+            const progressContainer = document.getElementById('progress-bars');
+            const progressBar = document.createElement('div');
+            progressBar.classList.add('progress-bar');
+            progressBar.innerHTML = `
+                <div class="progress-bar-fill" id="progress-fill-${index}" style="width: 0%;">0%</div>
+                <span>URL: ${url}</span>
+            `;
+            progressContainer.appendChild(progressBar);
+        }
+
+        async function pollProgressBar(url, index) {
+            let progress = 0;
+            const progressFill = document.getElementById(`progress-fill-${index}`);
+
+            const interval = setInterval(async () => {
+                const response = await fetch(`/get-progress/${url}`);
+                const data = await response.json();
+
+                if (data.progress >= 100) {
+                    clearInterval(interval);
+                    progressFill.style.backgroundColor = 'green';
+                    progressFill.textContent = 'Completed!';
+                    showOutputPreview(url);
+                } else {
+                    progressFill.style.width = `${data.progress}%`;
+                    progressFill.textContent = `${data.progress}%`;
+                }
+            }, 2000);
+        }
+
+        function showOutputPreview(url) {
+            const outputContainer = document.getElementById('output');
+            const previewDiv = document.createElement('div');
+            previewDiv.innerHTML = `
+                <h3>Preview for ${url}</h3>
+                <iframe src="${url}" width="100%" height="300px"></iframe>
+                <button class="download-btn" onclick="downloadFile('${url}')">Download</button>
+            `;
+            outputContainer.appendChild(previewDiv);
+        }
+
+        async function downloadFile(url) {
+            // Placeholder for download functionality
+            alert(`Downloading content for: ${url}`);
+        }
+
+        // Mock the history and polling
+        setTimeout(() => {
+            const historyList = document.getElementById('history-list');
+            const historyItem = document.createElement('li');
+            historyItem.classList.add('history-item');
+            historyItem.innerHTML = `<span>https://example.com</span><span>Status: Completed</span>`;
+            historyList.appendChild(historyItem);
+        }, 3000);
     </script>
 </body>
 </html>

@@ -1,0 +1,11 @@
+celery==5.2.7
+asyncio==3.4.3
+redis==4.5.4
+fastapi==0.95.0
+uvicorn==0.22.0
+pydantic==1.11.1
+playwright==1.29.0
+html-scraping==0.1.0  # Assuming you have a custom package or a similar one
+pdf-scraping==0.1.0  # Assuming you have a custom package or a similar one
+image-scraping==0.1.0  # Assuming you have a custom package or a similar one
+table-scraping==0.1.0  # Assuming you have a custom package or a similar one

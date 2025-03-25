@@ -1,80 +1,130 @@
-import json
-import redis
-import time
-import os
 from celery import Celery
 import asyncio
+import os
+import json
+import redis
 from html_scraping import scrape_html
 from pdf_scraping import scrape_pdfs
 from image_scraping import scrape_images
 from table_scraping import fetch_tables_html
-
-# Initialize Redis
-redis_client = redis.Redis(host="localhost", port=6379, db=0, decode_responses=True)
-
+redis_client = redis.StrictRedis(host='localhost', port=6379, db=0)
 # Initialize Celery
 celery_app = Celery(
     "tasks",
-    broker="redis://localhost:6379/1",
+    broker="redis://localhost:6379/0",
     backend="redis://localhost:6379/2"
 )
 
-# Scraping Task Functions
-@celery_app.task
+@celery_app.task(soft_time_limit=300, time_limit=600)
 def scrape_tables_task(url, crawl_id):
-    fetch_tables_html(url)
-    return {"url": url, "status": "completed", "crawl_id": crawl_id}
+    print(f"Scraping table data from: {url}")  # Ensure this is printed
+    try:
+        fetch_tables_html(url)  # Ensure this function is actually being called
+        return {"url": url, "status": "completed", "crawl_id": crawl_id}
+    except Exception as e:
+        print(f"Error: {str(e)}")  # Print error if any occurs
+        return {"url": url, "status": "failed", "error": str(e), "crawl_id": crawl_id}
+
+
+
+# @celery_app.task(soft_time_limit=300, time_limit=600)
+# def scrape_tables_task(url, crawl_id):
+#     print(f"Scraping table data from: {url}")
+#     try:
+#         fetch_tables_html(url)
+#         return {"url": url, "status": "completed", "crawl_id": crawl_id}
+#     except Exception as e:
+#         return {"url": url, "status": "failed", "error": str(e), "crawl_id": crawl_id}
 
 @celery_app.task
-def scrape_pdfs_task(url, output_folder, crawl_id):
-    asyncio.run(scrape_pdfs(url, output_folder))
-    return {"url": url, "status": "completed", "crawl_id": crawl_id}
+def scrape_pdfs_task(url, crawl_id):
+    print(f"Scraping PDFs from: {url}")
+    try:
+        scrape_pdfs(url)
+        return {"url": url, "status": "completed", "crawl_id": crawl_id}
+    except Exception as e:
+        return {"url": url, "status": "failed", "error": str(e), "crawl_id": crawl_id}
 
 @celery_app.task
-def scrape_images_task(url, output_folder, crawl_id):
-    asyncio.run(scrape_images(url, output_folder))
-    return {"url": url, "status": "completed", "crawl_id": crawl_id}
+def scrape_images_task(url, crawl_id):
+    print(f"Scraping images from: {url}")
+    try:
+        asyncio.run(scrape_images(url))  # Ensure this function is truly async
+        return {"url": url, "status": "completed", "crawl_id": crawl_id}
+    except Exception as e:
+        return {"url": url, "status": "failed", "error": str(e), "crawl_id": crawl_id}
 
 @celery_app.task
-def scrape_html_task(url, output_folder, crawl_id):
-    asyncio.run(scrape_html(url, output_folder))
-    return {"url": url, "status": "completed", "crawl_id": crawl_id}
+def scrape_html_task(url, crawl_id):
+    print(f"Scraping HTML content from: {url}")
+    try:
+        scrape_html(url)
+        return {"url": url, "status": "completed", "crawl_id": crawl_id}
+    except Exception as e:
+        return {"url": url, "status": "failed", "error": str(e), "crawl_id": crawl_id}
 
-# Batch Processing
 @celery_app.task
 def process_batch(batch_key, crawl_id, next_batch_key=None):
-    """Process one batch from Redis and schedule the next batch after 30 minutes, ensuring each task is linked to a crawl_id."""
-    
+    print(f"Processing batch with crawl_id: {crawl_id} and batch_key: {batch_key}")
+
+    # Fetch batch data from Redis
     batch_data = redis_client.get(batch_key)
     if not batch_data:
+        print(f"Error: Batch key {batch_key} not found in Redis.")
         return {"error": "Batch not found in Redis"}
 
-    batch = json.loads(batch_data)
+    try:
+        batch = json.loads(batch_data)
+    except json.JSONDecodeError:
+        print(f"Error: Invalid JSON format in Redis for batch {batch_key}.")
+        return {"error": "Invalid JSON format in Redis"}
+
     results = []
-    
-    output_folder = f"output/{crawl_id}"  # Store results per crawl_id
-    os.makedirs(output_folder, exist_ok=True)  # Ensure the folder exists
+    output_folder = f"output/{crawl_id}"
+    os.makedirs(output_folder, exist_ok=True)
 
     for item in batch:
-        url = item["url"]
-        schema_type = item["schema"]["type"]
+        url = item.get("url")
+        # schema_type = item.get("schema", {}).get("type")
+        schema_type = item.get("schema", {}).get("type", "").strip().lower()
+        print(f"Schema type received: '{schema_type}' for URL: {url}")
 
-        # Call the appropriate scraping task while passing the crawl_id
-        if schema_type == "table":
-            result = scrape_tables_task.apply_async((url, crawl_id), task_id=crawl_id)
-        elif schema_type == "pdf":
-            result = scrape_pdfs_task.apply_async((url, output_folder, crawl_id), task_id=crawl_id)
-        elif schema_type == "image":
-            result = scrape_images_task.apply_async((url, output_folder, crawl_id), task_id=crawl_id)
-        elif schema_type == "html":
-            result = scrape_html_task.apply_async((url, output_folder, crawl_id), task_id=crawl_id)
-        else:
-            result = {"url": url, "error": "Invalid schema type"}
+        if not url or not schema_type:
+            results.append({"url": url, "error": "Missing URL or schema type"})
+            continue
 
-        results.append({"url": url, "crawl_id": crawl_id, "task_id": result.id if isinstance(result, object) else "N/A"})
+        print(f"Submitting {schema_type} scraping task for {url}")
+        try:
+            if schema_type == "table":
+                print(f"Calling scrape_tables_task for {url}")
+                try:
+                    result = scrape_tables_task(url, crawl_id)  
+                    print(f"Task ID: {result.id}")
+                except Exception as e:
+                    print(f"Error calling scrape_tables_task for {url}: {str(e)}")
+            # if schema_type == "table":
+            #     print(f"Calling scrape_tables_task for {url}")
+            #     result = scrape_tables_task.apply_async(args=[url, crawl_id])
+            elif schema_type == "pdf":
+                result = scrape_pdfs_task.apply_async(args=[url, crawl_id])
+            elif schema_type == "image":
+                result = scrape_images_task.apply_async(args=[url, crawl_id])
+            elif schema_type == "html":
+                result = scrape_html_task.apply_async(args=[url, crawl_id])
+            else:
+                result = {"url": url, "error": "Invalid schema type"}
 
-    # Schedule the next batch after 30 minutes (if it exists)
+            if isinstance(result, object) and hasattr(result, "id"):
+                results.append({"url": url, "crawl_id": crawl_id, "task_id": result.id})
+            else:
+                results.append({"url": url, "error": "Task submission failed"})
+        except Exception as e:
+            print(f"Error submitting task for {url}: {str(e)}")
+            results.append({"url": url, "error": str(e)})
+
+    # Schedule next batch after 30 minutes
     if next_batch_key:
-        process_batch.apply_async((next_batch_key, crawl_id), countdown=30 * 60)  # Wait 30 mins
+        print(f"Scheduling next batch {next_batch_key} in 30 minutes")
+        process_batch.apply_async(args=[next_batch_key, crawl_id], countdown=30 * 60)
 
     return {"batch_processed": batch_key, "crawl_id": crawl_id, "results": results}
