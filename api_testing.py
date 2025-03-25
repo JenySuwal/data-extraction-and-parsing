@@ -4,7 +4,6 @@ import uuid
 import redis
 import json
 from celery_tasks_for_scraping import process_batch
-from table_scraping import fetch_tables_html
 
 app = FastAPI()
 redis_client = redis.Redis(host="localhost", port=6379, db=0, decode_responses=True)
@@ -20,8 +19,7 @@ class RequestData(BaseModel):
 @app.post("/process-data/")
 async def process_data(request: Request, request_data: RequestData):
     body = await request.body()
-    # print("Received JSON:", body.decode("utf-8"))
-
+    
     urls = request_data.urls
     schema = request_data.data_schema
 
@@ -42,26 +40,20 @@ async def process_data(request: Request, request_data: RequestData):
             "url": url,
             "schema": {"type": schema.type}
         }))
-
-    # Store batch in Redis
-    batch_key = str(uuid.uuid4())  # Unique batch key
-    redis_client.setex(batch_key, 300, json.dumps(urls_with_crawl_ids))  # Expire in 5 min
-    # print(f"Stored batch in Redis: Key={batch_key}, Data={json.dumps(urls_with_crawl_ids)}")
-
-    # Retrieve batch data
+  
+    batch_key = str(uuid.uuid4())  
+    redis_client.setex(batch_key, 300, json.dumps(urls_with_crawl_ids))  
+   
     batch_data = redis_client.get(batch_key)
-    # print(f"Retrieved batch from Redis: {batch_data}")
-
-    # Ensure batch_data exists
+    
     if not batch_data:
         raise HTTPException(status_code=400, detail="Batch data not found in Redis")
 
     batch = json.loads(batch_data)
     print(f"Redis batch data: {batch}")
 
-    crawl_id = batch[0]["crawl_id"]  # Extract crawl_id from first item in batch
-
-    # Send task to Celery
+    crawl_id = batch[0]["crawl_id"]  
+   
     process_batch.apply_async((batch_key, crawl_id), queue="default")
 
     return {
