@@ -3,3 +3,10 @@ demoenv/
 google-chrome-stable_current_amd64.deb
 
 chromedriver-linux64.zip
+
+__pycache__
+
+
+awscliv2.zip
+aws
+www_mcmaster_com

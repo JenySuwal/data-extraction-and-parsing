@@ -1,14 +1,12 @@
 from celery import Celery
 import asyncio
+import os
 import json
 import redis
 from html_scraping import scrape_html
 from pdf_scraping import scrape_pdfs
 from image_scraping import scrape_images
 from table_scraping import fetch_tables_html
-from table_parsing import parse_task
-  
-
 redis_client = redis.StrictRedis(host='localhost', port=6379, db=0)
 
 celery_app = Celery(
@@ -16,21 +14,12 @@ celery_app = Celery(
     broker="redis://localhost:6379/0",
     backend="redis://localhost:6379/2"
 )
-celery_app.conf.task_routes = {
-    "tasks.scrape_tables_task": {"queue": "scraping_queue"},
-    "tasks.scrape_pdfs_task": {"queue": "scraping_queue"},
-    "tasks.scrape_images_task": {"queue": "scraping_queue"},
-    "tasks.scrape_html_task": {"queue": "scraping_queue"},
-    "tasks.process_batch": {"queue": "scraping_queue"},
-    "tasks.parse_task": {"queue": "parsing_queue"},
-}
-
 
 @celery_app.task(soft_time_limit=300, time_limit=600)
 def scrape_tables_task(url, crawl_id):
     print(f"Scraping table data from: {url}")  
     try:
-        fetch_tables_html(url,crawl_id)  
+        fetch_tables_html(url)  
         return {"url": url, "status": "completed", "crawl_id": crawl_id}
     except Exception as e:
         print(f"Error: {str(e)}") 
@@ -55,88 +44,77 @@ def scrape_images_task(url, crawl_id):
     except Exception as e:
         return {"url": url, "status": "failed", "error": str(e), "crawl_id": crawl_id}
 
-
 @celery_app.task
-def scrape_html_task(url, crawl_id, output_folder="/path/to/output"):
+def scrape_html_task(url, crawl_id):
     print(f"Scraping HTML content from: {url}")
     try:
-        scrape_html(url, output_folder)  
+        scrape_html(url)
         return {"url": url, "status": "completed", "crawl_id": crawl_id}
     except Exception as e:
         return {"url": url, "status": "failed", "error": str(e), "crawl_id": crawl_id}
 
-@celery_app.task(name="process_batch")
-def process_batch(batch_key, bucket_name):
-    print("Processing the batch data")
+@celery_app.task
+def process_batch(batch_key, crawl_id, next_batch_key=None):
+    print(f"Processing batch with crawl_id: {crawl_id} and batch_key: {batch_key}")
+
     batch_data = redis_client.get(batch_key)
     if not batch_data:
-        print(f"Batch key {batch_key} not found in Redis.")
+        print(f"Error: Batch key {batch_key} not found in Redis.")
         return {"error": "Batch not found in Redis"}
 
-    batch = json.loads(batch_data)
+    try:
+        batch = json.loads(batch_data)
+    except json.JSONDecodeError:
+        print(f"Error: Invalid JSON format in Redis for batch {batch_key}.")
+        return {"error": "Invalid JSON format in Redis"}
+
     results = []
-    batch_output = []
+    output_folder = f"output/{crawl_id}"
+    os.makedirs(output_folder, exist_ok=True)
 
     for item in batch:
         url = item.get("url")
+        # schema_type = item.get("schema", {}).get("type")
         schema_type = item.get("schema", {}).get("type", "").strip().lower()
-        crawl_id = item.get("crawl_id")
+        print(f"Schema type received: '{schema_type}' for URL: {url}")
 
         if not url or not schema_type:
             results.append({"url": url, "error": "Missing URL or schema type"})
             continue
 
+        print(f"Submitting {schema_type} scraping task for {url}")
         try:
             if schema_type == "table":
-                result = scrape_tables_task(url, crawl_id)
+                print(f"Calling scrape_tables_task for {url}")
+                try:
+                    result = scrape_tables_task(url, crawl_id)  
+                except Exception as e:
+                    print(f"Error calling scrape_tables_task for {url}: {str(e)}")
+            
             elif schema_type == "pdf":
-                result = scrape_pdfs_task(url, crawl_id)
+                result = scrape_tables_task(url, crawl_id)
+                # result = scrape_pdfs_task.apply_async(args=[url, crawl_id])
+
             elif schema_type == "image":
-                result = scrape_images_task(url, crawl_id)
+                result = scrape_images_task.apply_async(args=[url, crawl_id])
+
             elif schema_type == "html":
-                result = scrape_html_task(url, crawl_id)
+                result = scrape_html_task.apply_async(args=[url, crawl_id])
+                
             else:
                 result = {"url": url, "error": "Invalid schema type"}
 
-            batch_output.append(result)
-
+            if isinstance(result, object) and hasattr(result, "id"):
+                results.append({"url": url, "crawl_id": crawl_id, "task_id": result.id})
+            else:
+                results.append({"url": url, "error": "Task submission failed"})
         except Exception as e:
-            redis_client.set(f"failed_{crawl_id}", json.dumps({
-                "url": url,
-                "error": str(e),
-                "retry_count": 0,
-                "retry": True
-            }))
+            print(f"Error submitting task for {url}: {str(e)}")
             results.append({"url": url, "error": str(e)})
 
-
-        first_item = batch[0]
-        crawl_id = first_item.get("crawl_id")
-        url = first_item.get("url")
-
-        from urllib.parse import urlparse
-        domain = urlparse(url).netloc.replace('.', '_')  
-
-        file_key = f"{domain}/tables_{crawl_id}.html"
-
-    redis_client.set(f"batch_{batch_key}_completed", "true")
-
-    next_batch_key = redis_client.get(f"next_batch_{batch_key}")
+    
     if next_batch_key:
-        print(f"Waiting 30 minutes for next batch {next_batch_key}")
-        
+        print(f"Scheduling next batch {next_batch_key} in 30 minutes")
+        process_batch.apply_async(args=[next_batch_key, crawl_id], countdown=30 * 60)
 
-        process_batch.apply_async((next_batch_key, bucket_name), countdown=30 * 60)
-    else:
-        print("All batches completed. Starting parsing...")
-        if redis_client.get(f"batch_{batch_key}_completed") == b"true":
-            print("the batch is completed, starting parsing...")
-            start_parse(bucket_name, file_key)
-            
-
-    return {"batch_processed": batch_key, "results": results}
-
-
-def start_parse(bucket_name: str, file_key: str):
-    task = parse_task.apply_async(args=[bucket_name, file_key], queue="parsing_queue")
-    return {"message": "Parse task started", "task_id": task.id}
+    return {"batch_processed": batch_key, "crawl_id": crawl_id, "results": results}

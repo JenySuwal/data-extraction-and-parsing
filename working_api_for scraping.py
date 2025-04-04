@@ -3,7 +3,7 @@ from pydantic import BaseModel
 import uuid
 import redis
 import json
-from celery_tasks_for_scraping import process_batch
+from working_celery_tasks_for_scraping import process_batch
 
 app = FastAPI()
 redis_client = redis.Redis(host="localhost", port=6379, db=0, decode_responses=True)
