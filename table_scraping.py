@@ -21,7 +21,7 @@ S3_BUCKET_NAME = "scraped-unstructured-data"
 def upload_to_s3(local_file, s3_path):
     try:
         s3_client.upload_file(local_file, S3_BUCKET_NAME, s3_path)
-        print(f"File uploaded to S3: s3://{S3_BUCKET_NAME}/{s3_path}")
+        # print(f"File uploaded to S3: s3://{S3_BUCKET_NAME}/{s3_path}")
         return f"s3://{S3_BUCKET_NAME}/{s3_path}"
     except NoCredentialsError:
         print("AWS credentials not found. Make sure they are configured.")
@@ -50,7 +50,7 @@ def scroll_whole_page(driver):
         return False
 
     tables = driver.find_elements(By.TAG_NAME, "table")
-    print(f"Total Tables Found Initially: {len(tables)}")
+    # print(f"Total Tables Found Initially: {len(tables)}")
 
     for table in tables:
         try:
@@ -62,10 +62,59 @@ def scroll_whole_page(driver):
     
     return True
 
-def fetch_tables_html(url,crawl_id):
+# def fetch_tables_html(url,crawl_id):
+#     try:
+#         chrome_options = Options()
+#         chrome_options.add_argument("--headless")  
+#         chrome_options.add_argument("--disable-gpu")
+#         chrome_options.add_argument("--no-sandbox")
+#         chrome_options.add_argument("--disable-dev-shm-usage")
+#         chrome_options.add_argument("--remote-debugging-port=9222")
+#         chrome_options.binary_location = "/usr/bin/google-chrome"
+
+#         chromedriver_path = shutil.which("chromedriver")
+#         if not chromedriver_path:
+#             raise FileNotFoundError("Chromedriver not found. Make sure it's installed and in PATH.")
+
+#         # print(f"Using Chromedriver: {chromedriver_path}")
+
+#         driver = uc.Chrome(options=chrome_options, driver_executable_path=chromedriver_path)
+#         # print("Chrome launched successfully.")
+
+#         driver.get(url)
+#         sleep_random()
+
+#         scroll_whole_page(driver)
+
+#         tables = driver.find_elements(By.TAG_NAME, "table")
+#         tables_html = "\n".join([table.get_attribute("outerHTML") for table in tables])
+#         driver.quit()
+
+#         domain = urlparse(url).netloc.replace(".", "_")
+#         folder_path = os.path.join(os.getcwd(), domain)
+#         os.makedirs(folder_path, exist_ok=True)
+
+        
+#         file_name = f"tables_{crawl_id}.html"
+#         local_file_path = os.path.join(folder_path, file_name)
+        
+#         with open(local_file_path, "w", encoding="utf-8") as f:
+#             f.write(f"<html><body>{tables_html}</body></html>")
+
+#         print(f"Tables saved to: {local_file_path}")
+
+#         s3_path = f"{domain}/{file_name}"
+#         s3_url = upload_to_s3(local_file_path, s3_path)
+
+#         return s3_url
+
+#     except Exception as e:
+#         print(f"Error fetching tables from {url}: {e}")
+#         return None
+def fetch_tables_html(url, crawl_id):
     try:
         chrome_options = Options()
-        chrome_options.add_argument("--headless")  
+        chrome_options.add_argument("--headless")
         chrome_options.add_argument("--disable-gpu")
         chrome_options.add_argument("--no-sandbox")
         chrome_options.add_argument("--disable-dev-shm-usage")
@@ -76,32 +125,40 @@ def fetch_tables_html(url,crawl_id):
         if not chromedriver_path:
             raise FileNotFoundError("Chromedriver not found. Make sure it's installed and in PATH.")
 
-        # print(f"Using Chromedriver: {chromedriver_path}")
-
         driver = uc.Chrome(options=chrome_options, driver_executable_path=chromedriver_path)
-        # print("Chrome launched successfully.")
 
         driver.get(url)
         sleep_random()
-
         scroll_whole_page(driver)
 
-        tables = driver.find_elements(By.TAG_NAME, "table")
-        tables_html = "\n".join([table.get_attribute("outerHTML") for table in tables])
+        # Try extracting the specific div
+        try:
+            specific_div = driver.find_element(By.XPATH, '//*[@id="topOfPage"]/div[1]/div[1]/div[1]/div/div[2]/div[2]/div')
+            div_html = specific_div.get_attribute("outerHTML")
+        except:
+            div_html = ""
+            # print("Specified div not found!")
+
+        # Extract headers and tables
+        elements = driver.find_elements(By.XPATH, "//h1 | //h2 | //h3 | //h4 | //h5 | //h6 | //table")
+
+        extracted_html = div_html + "\n"  # Add the div first (if exists)
+        for element in elements:
+            extracted_html += element.get_attribute("outerHTML") + "\n"
+
         driver.quit()
 
         domain = urlparse(url).netloc.replace(".", "_")
         folder_path = os.path.join(os.getcwd(), domain)
         os.makedirs(folder_path, exist_ok=True)
 
-        
         file_name = f"tables_{crawl_id}.html"
         local_file_path = os.path.join(folder_path, file_name)
-        
-        with open(local_file_path, "w", encoding="utf-8") as f:
-            f.write(f"<html><body>{tables_html}</body></html>")
 
-        print(f"Tables saved to: {local_file_path}")
+        with open(local_file_path, "w", encoding="utf-8") as f:
+            f.write(f"<html><body>{extracted_html}</body></html>")
+
+        # print(f"Content (tables + headers) saved to: {local_file_path}")
 
         s3_path = f"{domain}/{file_name}"
         s3_url = upload_to_s3(local_file_path, s3_path)

@@ -4,7 +4,6 @@ import time
 import redis
 import pandas as pd
 import boto3
-import xlsxwriter
 import numpy as np
 from clean_html import clean_html_task
 from bs4 import BeautifulSoup
@@ -145,7 +144,7 @@ def preprocess_for_excel_name(bucket_name, file_key):
     html_elements = clean_html_task(bucket_name, file_key)
     soup = BeautifulSoup(html_elements, "html.parser")
     h3_elements = soup.find_all("h3")
-    print(f"All the h3 elements: {h3_elements}")
+    # print(f"All the h3 elements: {h3_elements}")
     
     last_text = ""
     if h3_elements:
@@ -157,12 +156,12 @@ def preprocess_for_excel_name(bucket_name, file_key):
     last_text = last_text.replace(" ", "_").replace(".", "")
     return last_text
 
-def save_dataframes_to_s3(dataframes, filename=None):
-    if filename is None:
-        base_name = preprocess_for_excel_name()
-        dir_path = "./mcmaster_excel/"
-        filename = os.path.join(dir_path, f"{base_name}.xlsx")
-    
+def save_dataframes_to_s3( dataframes, bucket_name,  file_key):#dataframes,
+    # if filename is None:
+    base_name = preprocess_for_excel_name(bucket_name, file_key)
+    # print(f"Generated base name for Excel file: {base_name}")
+    dir_path = "./mcmaster_excel/"
+    filename = os.path.join(dir_path, f"{base_name}.xlsx")
     os.makedirs(os.path.dirname(filename), exist_ok=True)
 
     if not dataframes:
@@ -178,7 +177,7 @@ def save_dataframes_to_s3(dataframes, filename=None):
                 else:
                     print(f"Skipping empty DataFrame at index {idx}")
 
-        print(f"Successfully saved to {filename}")
+        # print(f"Successfully saved to {filename}")
 
         # Upload to S3
         s3_key = f"parsed_data/{os.path.basename(filename)}"
@@ -190,16 +189,16 @@ def save_dataframes_to_s3(dataframes, filename=None):
 
 @celery_app.task(name="parse_task")
 def parse_task(bucket_name, file_key):
-    print(f"Downloading {file_key} from bucket {bucket_name}")
+    # print(f"Downloading {file_key} from bucket {bucket_name}")
     os.makedirs("./temp", exist_ok=True)
     local_filename = f"./temp/{file_key.split('/')[-1]}"
     try:
         s3_client.download_file(bucket_name, file_key, local_filename)
-        print(f"Downloaded {file_key} to {local_filename}")
+        # print(f"Downloaded {file_key} to {local_filename}")
     except Exception as e:
         print(f"Failed to download {file_key} from S3: {e}")
         return {"error": f"Failed to download file: {e}"}
-    # s3_client.download_file(bucket_name, file_key, local_filename)
+
 
     start_time = time.time()
 
@@ -208,7 +207,7 @@ def parse_task(bucket_name, file_key):
     final_data.process_all_tables()
 
     parsed_filename = local_filename.replace(".html", ".xlsx")
-    save_dataframes_to_s3(final_data.processed_dfs, parsed_filename)
+    save_dataframes_to_s3(final_data.processed_dfs, bucket_name, file_key)
 
     end_time = time.time()
     print(f"Processing completed in {end_time - start_time:.2f} seconds")
