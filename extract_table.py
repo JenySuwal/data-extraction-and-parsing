@@ -15,12 +15,25 @@ def create_dataframes(bucket_name, file_key):
         thead_data = []
         tbody_data = []
 
+        # thead = table.find("thead")
+        # if thead:
+        #     for row in thead.find_all("tr"):
+        #         cols = row.find_all(["th", "td"])
+        #         thead_data.append([col.get_text(strip=True) for col in cols])
+
+        # tbody = table.find("tbody")
         thead = table.find("thead")
+        # print(thead)
         if thead:
             for row in thead.find_all("tr"):
                 cols = row.find_all(["th", "td"])
+                # Convert <td> to <th> inside <thead>
+                for col in cols:
+                    if col.name == "td":
+                        col.name = "th"
                 thead_data.append([col.get_text(strip=True) for col in cols])
-
+            # print(f"Processed thead: {thead_data}")
+ 
         tbody = table.find("tbody")
         if tbody:
             orphan_ths = tbody.find_all("th", recursive=False)  
@@ -42,6 +55,7 @@ def create_dataframes(bucket_name, file_key):
         
         thead_df = pd.DataFrame([row + [""] * (max_thead_cols - len(row)) for row in thead_data])
         tbody_df = pd.DataFrame([row + [""] * (max_tbody_cols - len(row)) for row in tbody_data])
+        # print(thead_df)
         
         thead_dataframes.append(thead_df)
         tbody_dataframes.append(tbody_df)
