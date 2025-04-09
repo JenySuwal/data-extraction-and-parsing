@@ -10,3 +10,8 @@ __pycache__
 awscliv2.zip
 aws
 www_mcmaster_com
+
+
+.env
+
+mcmaster_excel
