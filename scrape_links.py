@@ -48,6 +48,6 @@ def scrape_and_save_links(url, output_file):
 
 # Run the function
 if __name__ == "__main__":
-    url = "https://www.mcmaster.com/products/screws/thumb-screws-2~/"  
-    output_file = "Carriage_bolt.txt"  
+    url = "https://www.mcmaster.com/products/screws/rounded-head-screws-2~/"  
+    output_file = "round-head.txt"  
     scrape_and_save_links(url, output_file)

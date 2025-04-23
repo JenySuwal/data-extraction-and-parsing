@@ -16,8 +16,9 @@ class TableDataParser:
     # def __init__(self):
     #     self.llm = OllamaLLM(
     #         model="llama3",
-    #         base_url="http://192.168.20.194:11434",
-    #         # base_url="http://localhost:11434",
+    #         # base_url="http://192.168.16.42:11434",
+    #         # base_url="http://192.168.20.194:11434",
+    #         base_url="http://localhost:11434",
     #         temperature=0.1
     #     )
     def __init__(self,api_key):
@@ -181,6 +182,7 @@ class TableDataParser:
 
 #     print(f"Parsed Data: {parsed_data}")
 #     return parsed_data
+
 import os
 def get_openai_api_key():
     load_dotenv()

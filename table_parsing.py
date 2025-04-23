@@ -44,22 +44,48 @@ class FinalDataframe:
             print(f"Initialization error: {e}")
             self.header_dfs, self.body_dfs, self.llm_output_list, self.total_tables, self.processed_dfs = [], [], [], 0, []
 
+    # def process_all_tables(self):
+    #     for i in range(self.total_tables):
+    #         header_df = self.header_dfs[i].copy()
+    #         body_df = self.body_dfs[i]
+    #         llm_output = self.llm_output_list[i]
+
+    #         merged_df = self.add_header(llm_output, header_df, body_df)
+    #         if merged_df is not None:
+    #             data_dict = json.loads(llm_output)
+    #             merged_df = self.assign_thread_size(data_dict, merged_df)
+    #             merged_df = self.assign_material_surface(data_dict, merged_df)
+    #             final_df = self.merge_header(header_df, merged_df)
+    #             self.processed_dfs.append(final_df)
+    #         else:
+    #             print(f"Skipping table {i+1} due to processing error.")
+
     def process_all_tables(self):
         for i in range(self.total_tables):
-            header_df = self.header_dfs[i].copy()
-            body_df = self.body_dfs[i]
-            llm_output = self.llm_output_list[i]
+            try:
+                header_df = self.header_dfs[i].copy()
+                body_df = self.body_dfs[i]
+                llm_output = self.llm_output_list[i]
+            except IndexError as e:
+                print(f"[IndexError] At table index {i}:")
+                print(f" - total_tables: {self.total_tables}")
+                print(f" - header_dfs: {len(self.header_dfs)}")
+                print(f" - body_dfs: {len(self.body_dfs)}")
+                print(f" - llm_output_list: {len(self.llm_output_list)}")
+                continue  # or `break` if you want to stop execution
 
             merged_df = self.add_header(llm_output, header_df, body_df)
             if merged_df is not None:
-                data_dict = json.loads(llm_output)
-                merged_df = self.assign_thread_size(data_dict, merged_df)
-                merged_df = self.assign_material_surface(data_dict, merged_df)
-                final_df = self.merge_header(header_df, merged_df)
-                self.processed_dfs.append(final_df)
+                try:
+                    data_dict = json.loads(llm_output)
+                    merged_df = self.assign_thread_size(data_dict, merged_df)
+                    merged_df = self.assign_material_surface(data_dict, merged_df)
+                    final_df = self.merge_header(header_df, merged_df)
+                    self.processed_dfs.append(final_df)
+                except Exception as e:
+                    print(f"[ProcessingError] at table {i+1}: {e}")
             else:
                 print(f"Skipping table {i+1} due to processing error.")
-
 
     # def process_all_tables(self):
     #     for i in range(self.total_tables):
@@ -232,34 +258,26 @@ class FinalDataframe:
        
     #     return df
     ######################################works for llama3##################################################
+    # #########################################works for Openai API####################################################### 
     @staticmethod
     def assign_thread_size(data_dict, dataframe):
         thread_sizes = set()
-
-        def clean_value(value):
-            
+        def clean_value(value):           
             return ''.join(
                 str(value)
                     .replace('"', '')
                     .replace('\\', '')
                     .replace("\xa0", " ")
                     .replace(' ', '')  
-            )
-
-        
-        for item in data_dict.get('thread_size', []):
-            
+            )  
+        for item in data_dict.get('thread_size', []):  
             try:
                 cleaned_item = clean_value(item)
-                thread_sizes.add(cleaned_item)  
-                
+                thread_sizes.add(cleaned_item)    
             except Exception as e:
                 print(f"Error processing item: {item} - {e}")
-
-        
         if not thread_sizes:
             return dataframe
-
         df = dataframe.copy()
         df.columns = [f"{col}_{i}" if col in df.columns[:i] else col for i, col in enumerate(df.columns)]
         first_col = df.columns[0]
@@ -275,6 +293,7 @@ class FinalDataframe:
         df = df[~mask].reset_index(drop=True)
         return df
 
+
     @staticmethod
     def assign_material_surface(data_dict, dataframe):
         
@@ -288,62 +307,33 @@ class FinalDataframe:
                     .replace('\\', '')
                     .replace("\xa0", " ")
                     .replace(' ', '')  
-            )
-        
-        
-        for item in data_dict.get('material_surface', []):
-            
+            )    
+        for item in data_dict.get('material_surface', []):           
             try:  
                 cleaned_item = clean_value(item)
                 materials.add(cleaned_item)
-
             except Exception as e:
-                print(f"Error processing item: {item} - {e}") 
-        
-        
+                print(f"Error processing item: {item} - {e}")      
         if not materials:
-            return dataframe
-        
-        
+            return dataframe     
         df = dataframe.copy()
-
-        
         df.columns = [f"{col}_{i}" if col in df.columns[:i] else col for i, col in enumerate(df.columns)]
 
         first_col = df.columns[0]
         df['material_surface'] = None
-        current_material = None  
+        current_size = None  
 
         for idx, row in df.iterrows():
             value_before = row[first_col]
             cleaned_value = clean_value(value_before)
-
-            
-
             if cleaned_value in materials:
                 current_size = value_before  
-
-            df.at[idx, 'material_surface'] = current_size
-
-        
-        mask = df[first_col].map(lambda x: clean_value(x) in materials)
-
-        
-        df = df[~mask].reset_index(drop=True)
-
-        
+            df.at[idx, 'material_surface'] = current_size 
+        mask = df[first_col].map(lambda x: clean_value(x) in materials)   
+        df = df[~mask].reset_index(drop=True)     
         return df
-    # def merge_header(self, processed_df):
-    #     header_columns = self.header_dfs[0].columns.tolist()
-    #     processed_columns = processed_df.columns.tolist()
+    
 
-    #     aligned_header = pd.DataFrame(columns=processed_columns)
-    #     for col in header_columns:
-    #         if col in processed_columns:
-    #             aligned_header[col] = self.header_dfs[0].get(col, np.nan)
-
-    #     full_df = pd.concat([aligned_header, processed_df], ignore_index=True)
-    #     return full_df
     @staticmethod
     def merge_header(header_df, processed_df):
         try:
@@ -366,6 +356,7 @@ class FinalDataframe:
         except Exception as e:
             print(f"Error merging header: {e}")
             return None
+   #########################################works for Openai API####################################################### 
 def preprocess_for_excel_name(bucket_name, file_key):
     html_elements = clean_html_task(bucket_name, file_key)
     soup = BeautifulSoup(html_elements, "html.parser")
@@ -406,7 +397,7 @@ def save_dataframes_to_s3( dataframes, bucket_name,  file_key):#dataframes,
         # print(f"Successfully saved to {filename}")
 
         # Upload to S3
-        s3_key = f"Carriage_bolts/{os.path.basename(filename)}"
+        s3_key = f"rounded-remaining/{os.path.basename(filename)}"
         s3_client.upload_file(filename, OUTPUT_BUCKET, s3_key)
         print(f"Successfully uploaded {filename} to S3 bucket {OUTPUT_BUCKET} as {s3_key}")
 

@@ -17,8 +17,12 @@ def clean_html(html_content: str) -> str:
 
     for tag in soup.find_all(void_elements):
         tag.decompose()  
+    for br in soup.find_all("br"):
+        br.replace_with(" ")
 
     def preserve_text_before_removal(tag):
+        if any(child.name and child.name.startswith("h") for child in tag.find_all()):
+            return
         if tag.name == "a":
             tag.replace_with(NavigableString(tag.get_text(" ", strip=True)))
         elif tag.contents:
@@ -105,14 +109,48 @@ def ensure_tbody_after_thead(html: str) -> str:
                 table.insert(0, tbody)
 
     return str(soup)
+
+def multiple_tbody_in_table(html: str) -> str:
+    soup = BeautifulSoup(html, "html.parser")
+    tables = soup.find_all("table")
+ 
+    for table in tables:
+        tbodies = table.find_all("tbody")
+ 
+        if len(tbodies) > 1:
+           
+           
+            for tbody in tbodies:
+                for td in tbody.find_all("td"):
+                    colspan = td.get("colspan")
+                    if colspan and int(colspan) > 5:
+                        th = soup.new_tag("th", **td.attrs)
+                        th.string = td.get_text(strip=True)
+                        td.replace_with(th)
+ 
+           
+            first_tbody = tbodies[0]
+ 
+           
+            for tbody in tbodies[1:]:
+                for element in tbody.find_all(["tr", "th"]):
+                    first_tbody.append(element)
+ 
+           
+            for tbody in tbodies[1:]:
+                tbody.unwrap()  
+ 
+    return str(soup)
+
 def build_block_tree(html_content, max_words=50):
     cleaned_html = clean_html(html_content)
     fixed_html = ensure_thead_between_table_and_tbody(cleaned_html)
     fixed_html=ensure_tbody_after_thead(fixed_html)
-    soup = BeautifulSoup(fixed_html, "html.parser")
-    
+    # soup = BeautifulSoup(fixed_html, "html.parser")
+    fully_processed_html = multiple_tbody_in_table(fixed_html)
+    return fully_processed_html
 
-    return str(soup)
+    # return str(soup)
 
 
 import os

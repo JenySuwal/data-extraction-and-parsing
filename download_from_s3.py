@@ -3,7 +3,7 @@ import os
 import zipfile
 from io import BytesIO
 
-def download_entire_parsed_data_as_zip(bucket_name, prefix='Hex-headed/', zip_file_name='hex_head_data.zip', local_download_path='.'):
+def download_entire_parsed_data_as_zip(bucket_name, prefix='Round-head6/', zip_file_name='Round-head6.zip', local_download_path='./S3_downloads/'):
     """
     Downloads all files under 'parsed_data/' from the given S3 bucket and zips them into a single file.
     
