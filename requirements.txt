@@ -136,7 +136,7 @@ SQLAlchemy-JSONField==1.0.2
 SQLAlchemy-Utils==0.41.2
 sqlparse==0.5.3
 starlette==0.45.3
-streamlit==1.41.1
+
 striprtf==0.0.26
 sympy==1.13.1
 tabcompleter==1.4.0
