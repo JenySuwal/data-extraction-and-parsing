@@ -8,7 +8,7 @@ boto3
 pandas
 playwright
 selenium
-undetected_chromedriver
+undetected-chromedriver==3.5.5
 beautifulsoup4
 ipykernel
 pydantic
@@ -20,3 +20,4 @@ langchain_openai
 pymongo
 pandas
 xlsxwriter
+uvicorn==0.34.0
