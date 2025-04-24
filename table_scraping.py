@@ -121,7 +121,7 @@ def fetch_tables_html(url, crawl_id):
         chrome_options.add_argument("--remote-debugging-port=9222")
         chrome_options.binary_location = "/usr/bin/google-chrome"
 
-        chromedriver_path = shutil.which("chromedriver")
+        chromedriver_path = shutil.which("/usr/local/bin/chromedriver")
         if not chromedriver_path:
             raise FileNotFoundError("Chromedriver not found. Make sure it's installed and in PATH.")
 
