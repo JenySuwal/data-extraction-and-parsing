@@ -120,8 +120,10 @@ def fetch_tables_html(url, crawl_id):
         chrome_options.add_argument("--disable-dev-shm-usage")
         chrome_options.add_argument("--remote-debugging-port=9222")
         chrome_options.binary_location = "/usr/bin/google-chrome"
-
-        chromedriver_path = shutil.which("/usr/local/bin/chromedriver")
+        chrome_options.binary_location = "/snap/bin/chromium"
+        # chromedriver_path = shutil.which("/usr/local/bin/chromedriver")
+        chromedriver_path = "/usr/local/bin/chromedriver"  # Adjust the path if necessary
+        # chromium_path = "/snap/bin/chromium"
         if not chromedriver_path:
             raise FileNotFoundError("Chromedriver not found. Make sure it's installed and in PATH.")
 
