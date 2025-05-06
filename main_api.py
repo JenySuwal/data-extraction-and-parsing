@@ -25,7 +25,7 @@ class Schema(BaseModel):
     columns: List[str] = []
 
 class RequestData(BaseModel):
-    urls: list[str]
+    urls: List[str]
     data_schema: Schema
 
 def generate_crawl_id(url: str) -> str:
