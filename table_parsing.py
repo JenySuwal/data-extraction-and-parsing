@@ -7,6 +7,7 @@ import boto3
 import numpy as np
 from clean_html import clean_html_task
 from bs4 import BeautifulSoup
+from urllib.parse import urlparse
 import os
 from parsing_on_batch import process_html_and_extract_data
 from extract_table import create_dataframes
@@ -357,53 +358,158 @@ class FinalDataframe:
             print(f"Error merging header: {e}")
             return None
    #########################################works for Openai API####################################################### 
-def preprocess_for_excel_name(bucket_name, file_key):
-    html_elements = clean_html_task(bucket_name, file_key)
-    soup = BeautifulSoup(html_elements, "html.parser")
-    h3_elements = soup.find_all("h3")
-    # print(f"All the h3 elements: {h3_elements}")
-    
-    last_text = ""
-    if h3_elements:
-        last_h3 = h3_elements[-1]
-        text_parts = list(last_h3.stripped_strings)
-        if text_parts:
-            last_text = text_parts[-1]
-    
-    last_text = last_text.replace(" ", "_").replace(".", "")
-    return last_text
 
-def save_dataframes_to_s3( dataframes, bucket_name,  file_key):#dataframes,
-    # if filename is None:
-    base_name = preprocess_for_excel_name(bucket_name, file_key)
-    # print(f"Generated base name for Excel file: {base_name}")
-    dir_path = "./mcmaster_excel/"
-    filename = os.path.join(dir_path, f"{base_name}.xlsx")
-    os.makedirs(os.path.dirname(filename), exist_ok=True)
+# from urllib.parse import urlparse
+# from bs4 import BeautifulSoup
+# import re
 
+# def extract_url_parts(url):
+#     """Extract and return different parts of a URL as a dictionary"""
+#     parsed = urlparse(url)
+#     path_parts = [part for part in parsed.path.split('/') if part]
+    
+#     return {
+#         'netloc': parsed.netloc,
+#         'path': parsed.path,
+#         'path_parts': path_parts,
+#         'last_part': path_parts[-1] if path_parts else '',
+#         'second_last_part': path_parts[-2] if len(path_parts) > 1 else '',
+#         'full_url': url
+#     }
+
+# def preprocess_for_excel_name(bucket_name, file_key, url=None):
+#     """Generate Excel filename from URL instead of HTML content"""
+#     if not url:
+#         # Fallback to old behavior if URL isn't provided
+#         html_elements = clean_html_task(bucket_name, file_key)
+#         soup = BeautifulSoup(html_elements, "html.parser")
+#         h1 = soup.find("h1")
+#         return h1.get_text().strip().replace(" ", "_") if h1 else "data"
+    
+#     # Process URL to get filename
+#     url_parts = extract_url_parts(url)
+    
+#     # Clean the last part of the path to make it filename-friendly
+#     last_part = url_parts['last_part']
+    
+#     # Remove common URL suffixes and special characters
+#     filename = re.sub(r'[~\-/\d]+$', '', last_part)  # Remove trailing numbers, ~, -
+#     filename = re.sub(r'[^\w\-_]', '_', filename)    # Replace special chars with underscore
+#     filename = filename.strip('_')                   # Remove leading/trailing underscores
+    
+#     # If we ended up with nothing, use the second last part
+#     if not filename and len(url_parts['path_parts']) > 1:
+#         filename = url_parts['second_last_part']
+#         filename = re.sub(r'[^\w\-_]', '_', filename)
+#         filename = filename.strip('_')
+    
+#     # Final fallback if we still have nothing
+#     if not filename:
+#         filename = "extracted_data"
+    
+#     return filename.lower()  
+
+
+# def save_dataframes_to_s3( dataframes, bucket_name,  file_key):
+#     base_name = preprocess_for_excel_name(bucket_name, file_key)
+#     dir_path = "./mcmaster_excel/"
+#     filename = os.path.join(dir_path, f"{base_name}.xlsx")
+#     os.makedirs(os.path.dirname(filename), exist_ok=True)
+
+#     if not dataframes:
+#         print("No data to save")
+#         return
+
+#     try:
+#         with pd.ExcelWriter(filename, engine="openpyxl") as writer:
+#             for idx, df in enumerate(dataframes, 1):
+#                 if not df.empty:
+#                     sheet_name = f"Table_{idx}"[:31]  # Sheet names must be <= 31 characters
+#                     df.to_excel(writer, sheet_name=sheet_name, index=False)
+#                 else:
+#                     print(f"Skipping empty DataFrame at index {idx}")
+
+#         s3_key = f"rounded-remaining/{os.path.basename(filename)}"
+        
+#         s3_client.upload_file(filename, OUTPUT_BUCKET, s3_key)
+#         print(f"Successfully uploaded {filename} to S3 bucket {OUTPUT_BUCKET} as {s3_key}")
+
+#     except Exception as e:
+#         print(f"Save error: {e}")
+def extract_url_parts(url):
+    """Extract and return different parts of a URL as a dictionary"""
+    parsed = urlparse(url)
+    path_parts = [part for part in parsed.path.split('/') if part]
+    
+    return {
+        'netloc': parsed.netloc,
+        'path': parsed.path,
+        'path_parts': path_parts,
+        'last_part': path_parts[-1] if path_parts else '',
+        'second_last_part': path_parts[-2] if len(path_parts) > 1 else '',
+        'third_last_part': path_parts[-3] if len(path_parts) > 2 else '',
+        'full_url': url
+    }
+import re
+def create_folder_structure(url):
+    """Creates consistent 3-level structure for McMaster URLs"""
+    parts = extract_url_parts(url)
+    path_parts = parts['path_parts']
+    
+    # Ensure we have at least 3 parts (products/category/item)
+    if len(path_parts) < 3:
+        path_parts += ['misc'] * (3 - len(path_parts))  # Pad with 'misc' if needed
+
+    # Clean each part (remove numbers/special chars)
+    def clean(name):
+        name = re.sub(r'[\d~-]+$', '', name)  # Remove trailing numbers/~
+        name = re.sub(r'[^\w-]+', '_', name)  # Replace special chars
+        return name.strip('_-').lower()
+    
+    main_folder = clean(path_parts[1])     # 'screws'
+    sub_folder = clean(path_parts[2])      # 'flat_head_screws' or 'clamps'
+    file_name = clean(path_parts[-1])      # Last part as filename
+    
+    return {
+        'main_folder': main_folder,
+        'sub_folder': sub_folder,
+        'file_name': f"{file_name}.xlsx",
+        'full_path': f"{main_folder}/{sub_folder}/{file_name}.xlsx"
+    }
+
+def save_dataframes_to_s3(dataframes, bucket_name, file_key, url):
+    """Save dataframes to S3 with consistent 3-level folder structure"""
     if not dataframes:
         print("No data to save")
         return
 
+    # Create folder structure
+    structure = create_folder_structure(url)
+    
+    # Local paths
+    local_dir = "./mcmaster_excel/"
+    local_full_path = os.path.join(local_dir, structure['main_folder'], structure['sub_folder'])
+    os.makedirs(local_full_path, exist_ok=True)
+    
+    # Excel file path
+    local_filename = os.path.join(local_full_path, structure['file_name'])
+    
     try:
-        with pd.ExcelWriter(filename, engine="openpyxl") as writer:
+        with pd.ExcelWriter(local_filename, engine="openpyxl") as writer:
             for idx, df in enumerate(dataframes, 1):
                 if not df.empty:
-                    sheet_name = f"Table_{idx}"[:31]  # Sheet names must be <= 31 characters
+                    sheet_name = f"Table_{idx}"[:31]
                     df.to_excel(writer, sheet_name=sheet_name, index=False)
                 else:
                     print(f"Skipping empty DataFrame at index {idx}")
 
-        # print(f"Successfully saved to {filename}")
-
-        # Upload to S3
-        s3_key = f"rounded-remaining/{os.path.basename(filename)}"
-        s3_client.upload_file(filename, OUTPUT_BUCKET, s3_key)
-        print(f"Successfully uploaded {filename} to S3 bucket {OUTPUT_BUCKET} as {s3_key}")
+        # S3 path maintains the same structure
+        s3_key = f"{structure['main_folder']}/{structure['sub_folder']}/{structure['file_name']}"
+        s3_client.upload_file(local_filename, bucket_name, s3_key)
+        print(f"Successfully uploaded to {s3_key}")
 
     except Exception as e:
         print(f"Save error: {e}")
-
 @celery_app.task(name="parse_task")
 def parse_task(bucket_name, file_key):
     # print(f"Downloading {file_key} from bucket {bucket_name}")

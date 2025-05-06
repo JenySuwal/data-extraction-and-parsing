@@ -10,14 +10,11 @@ playwright
 selenium
 undetected-chromedriver==3.5.5
 beautifulsoup4
-ipykernel
-pydantic
 langchain==0.3.19
 langchain-ollama==0.2.3
 langchain-core==0.3.36
 beautifulsoup4==4.13.3
 langchain_openai
-pymongo
-pandas
+pymongo0
 xlsxwriter
 uvicorn==0.34.0

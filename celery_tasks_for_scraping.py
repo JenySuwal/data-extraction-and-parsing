@@ -66,73 +66,7 @@ def scrape_html_task(url, crawl_id, output_folder="/path/to/output"):
     except Exception as e:
         return {"url": url, "status": "failed", "error": str(e), "crawl_id": crawl_id}
 
-# @celery_app.task(name="process_batch")
-# def process_batch(batch_key, bucket_name):
-#     print("Processing the batch data")
-#     batch_data = redis_client.get(batch_key)
-#     if not batch_data:
-#         print(f"Batch key {batch_key} not found in Redis.")
-#         return {"error": "Batch not found in Redis"}
 
-#     batch = json.loads(batch_data)
-#     results = []
-#     batch_output = []
-
-#     for item in batch:
-#         url = item.get("url")
-#         schema_type = item.get("schema", {}).get("type", "").strip().lower()
-#         crawl_id = item.get("crawl_id")
-
-#         if not url or not schema_type:
-#             results.append({"url": url, "error": "Missing URL or schema type"})
-#             continue
-
-#         try:
-#             if schema_type == "table":
-#                 result = scrape_tables_task(url, crawl_id)
-#             elif schema_type == "pdf":
-#                 result = scrape_pdfs_task(url, crawl_id)
-#             elif schema_type == "image":
-#                 result = scrape_images_task(url, crawl_id)
-#             elif schema_type == "html":
-#                 result = scrape_html_task(url, crawl_id)
-#             else:
-#                 result = {"url": url, "error": "Invalid schema type"}
-
-#             batch_output.append(result)
-
-#         except Exception as e:
-#             redis_client.set(f"failed_{crawl_id}", json.dumps({
-#                 "url": url,
-#                 "error": str(e),
-#                 "retry_count": 0,
-#                 "retry": True
-#             }))
-#             results.append({"url": url, "error": str(e)})
-
-
-#         first_item = batch[0]
-#         crawl_id = first_item.get("crawl_id")
-#         url = first_item.get("url")
-
-#         from urllib.parse import urlparse
-#         domain = urlparse(url).netloc.replace('.', '_')  
-
-#         file_key = f"{domain}/tables_{crawl_id}.html"
-
-#     redis_client.set(f"batch_{batch_key}_completed", "true")
-#     # Trigger Parsing Immediately After Completion
-#     print("The batch is completed, starting parsing...")
-#     if redis_client.get(f"batch_{batch_key}_completed") == b"true":
-#         start_parse(bucket_name, file_key)
-
-#     # Handle Next Batch Scraping (Wait for 30 minutes before processing next batch)
-#     next_batch_key = redis_client.get(f"next_batch_{batch_key}")
-#     if next_batch_key:
-#         print(f"Waiting 30 minutes for next batch {next_batch_key}")
-#         process_batch.apply_async((next_batch_key, bucket_name), countdown=30 * 60)
-
-#     return {"batch_processed": batch_key, "results": results}
 @celery_app.task(name="process_batch")
 def process_batch(batch_key, bucket_name):
     print("Processing the batch data")
@@ -191,7 +125,7 @@ def process_batch(batch_key, bucket_name):
     next_batch_key = redis_client.get(f"next_batch_{batch_key}")
     if next_batch_key:
         print(f"Waiting 30 minutes for next batch {next_batch_key}")
-        process_batch.apply_async((next_batch_key, bucket_name), countdown=30 * 60)
+        process_batch.apply_async((next_batch_key, bucket_name))#, countdown=30 * 60
 
     return {"batch_processed": batch_key, "results": results}
 

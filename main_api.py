@@ -6,7 +6,7 @@ import redis
 import json
 from celery_tasks_for_scraping import celery_app, process_batch
 from table_parsing import parse_task
-
+from typing import List
 app = FastAPI()
 
 redis_client = redis.Redis(host="localhost", port=6379, db=0, decode_responses=True)
@@ -22,7 +22,7 @@ STATUS_FAILED = "failed"
 
 class Schema(BaseModel):
     type: str
-    columns: list[str] = []
+    columns: List[str] = []
 
 class RequestData(BaseModel):
     urls: list[str]
