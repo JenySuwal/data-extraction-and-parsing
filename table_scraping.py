@@ -1,6 +1,8 @@
 import boto3
 from botocore.exceptions import NoCredentialsError
 import undetected_chromedriver as uc
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 import shutil
@@ -9,7 +11,7 @@ import os
 import time
 import random
 from urllib.parse import urlparse
-from tqdm import tqdm  
+
 
 
 SLEEP_TIME_MIN = 2
@@ -43,23 +45,62 @@ def scroll_to_view(driver, element):
     driver.execute_script("arguments[0].scrollIntoView({block: 'center', behavior: 'smooth'});", element)
     sleep_random()
 
-def scroll_whole_page(driver):
-    """Scrolls the page to load all tables."""
-    if not check_visibility(driver, "//table"):
-        print("No tables found.")
-        return False
+# def scroll_whole_page(driver):
+
+#     if not check_visibility(driver, "//table"):
+#         print("No tables found.")
+#         return False
+
+#     tables = driver.find_elements(By.TAG_NAME, "table")
+#     # print(f"Total Tables Found Initially: {len(tables)}")
+
+#     for table in tables:
+#         try:
+#             scroll_to_view(driver, table)
+#         except:
+#             driver.execute_script("window.scrollBy(0, 400);")
+#             sleep_random()
+
+    
+#     return True
+
+def scroll_whole_page(driver, max_scrolls=10, wait_timeout=5):
+    try:
+        # Try waiting for tables directly
+        WebDriverWait(driver, wait_timeout).until(
+            EC.presence_of_element_located((By.XPATH, "//table"))
+        )
+    except:
+        # Scroll down to try to trigger lazy loading
+        last_height = driver.execute_script("return document.body.scrollHeight")
+        for _ in range(max_scrolls):
+            driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+            sleep_random()
+            new_height = driver.execute_script("return document.body.scrollHeight")
+            if new_height == last_height:
+                break
+            last_height = new_height
+
+        # Try waiting again after scrolling
+        try:
+            WebDriverWait(driver, wait_timeout).until(
+                EC.presence_of_element_located((By.XPATH, "//table"))
+            )
+        except:
+            print("No tables found.")
+            return False
 
     tables = driver.find_elements(By.TAG_NAME, "table")
-    # print(f"Total Tables Found Initially: {len(tables)}")
+
 
     for table in tables:
         try:
             scroll_to_view(driver, table)
-        except:
+        except Exception:
             driver.execute_script("window.scrollBy(0, 400);")
             sleep_random()
 
-    
+
     return True
 
 # def fetch_tables_html(url,crawl_id):
@@ -118,31 +159,33 @@ def fetch_tables_html(url, crawl_id):
         chrome_options.add_argument("--disable-gpu")
         chrome_options.add_argument("--no-sandbox")
         chrome_options.add_argument("--disable-dev-shm-usage")
-        chrome_options.add_argument("--remote-debugging-port=9222")
-        chrome_options.binary_location = "/usr/bin/google-chrome"
+        chrome_options.add_argument("--remote-debugging-port=9223")
+        chrome_options.binary_location="/opt/chrome-linux64/chrome"
 
-        chromedriver_path = shutil.which("chromedriver")
+        chromedriver_path="/usr/local/bin/chromedriver"
         if not chromedriver_path:
             raise FileNotFoundError("Chromedriver not found. Make sure it's installed and in PATH.")
 
-        driver = uc.Chrome(options=chrome_options, driver_executable_path=chromedriver_path)
+        driver = uc.Chrome(driver_executable_path=chromedriver_path,options=chrome_options,version_main=135)
+        
 
         driver.get(url)
         sleep_random()
         scroll_whole_page(driver)
 
-        # Try extracting the specific div
+        
         try:
             specific_div = driver.find_element(By.XPATH, '//*[@id="topOfPage"]/div[1]/div[1]/div[1]/div/div[2]/div[2]/div')
             div_html = specific_div.get_attribute("outerHTML")
+            
         except:
             div_html = ""
-            # print("Specified div not found!")
+            
 
-        # Extract headers and tables
+        
         elements = driver.find_elements(By.XPATH, "//h1 | //h2 | //h3 | //h4 | //h5 | //h6 | //table")
-
-        extracted_html = div_html + "\n"  # Add the div first (if exists)
+        print(elements)
+        extracted_html = div_html + "\n"  
         for element in elements:
             extracted_html += element.get_attribute("outerHTML") + "\n"
 
@@ -158,7 +201,7 @@ def fetch_tables_html(url, crawl_id):
         with open(local_file_path, "w", encoding="utf-8") as f:
             f.write(f"<html><body>{extracted_html}</body></html>")
 
-        # print(f"Content (tables + headers) saved to: {local_file_path}")
+        
 
         s3_path = f"{domain}/{file_name}"
         s3_url = upload_to_s3(local_file_path, s3_path)

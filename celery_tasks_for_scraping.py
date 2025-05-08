@@ -10,12 +10,12 @@ from table_scraping import fetch_tables_html
 from table_parsing import parse_task
   
 
-redis_client = redis.StrictRedis(host='localhost', port=6379, db=0)
+redis_client = redis.StrictRedis(host='redis', port=6379, db=0, decode_responses=True)
 
 celery_app = Celery(
-    "tasks",
-    broker="redis://localhost:6379/0",
-    backend="redis://localhost:6379/2"
+    'main_api',
+    broker='redis://redis:6379/0',
+    backend='redis://redis:6379/0'
 )
 celery_app.conf.task_routes = {
     "tasks.scrape_tables_task": {"queue": "scraping_queue"},
@@ -135,7 +135,9 @@ def scrape_html_task(url, crawl_id, output_folder="/path/to/output"):
 #     return {"batch_processed": batch_key, "results": results}
 @celery_app.task(name="process_batch")
 def process_batch(batch_key, bucket_name):
-    print("Processing the batch data")
+    print(f"in celery_task {batch_key}")
+    print(f"in celery_task {bucket_name}")
+    # print(f"Processing batch {batch_key}")
     batch_data = redis_client.get(batch_key)
     if not batch_data:
         print(f"Batch key {batch_key} not found in Redis.")

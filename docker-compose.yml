@@ -1,0 +1,96 @@
+version: '3.8'
+
+services:
+  vpn:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: vpn-gateway
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun
+    volumes:
+      - ./vpn/config.ovpn:/etc/openvpn/client/config.ovpn
+      - ./vpn/auth.txt:/etc/openvpn/client/auth.txt:ro
+    networks:
+      - vpn_network
+    command: >
+      /bin/sh -c "openvpn --config /etc/openvpn/client/config.ovpn --auth-user-pass /etc/openvpn/client/auth.txt --daemon --verb 4 &&
+      while ! ping -c 1 -W 1 8.8.8.8; do sleep 1; done &&
+      tail -f /dev/null"  
+    healthcheck:
+      test: ["CMD", "ping", "-c", "1", "8.8.8.8"]
+      start_period: 30s
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    networks:
+      - app_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  app:
+    build: .
+    ports:
+      - "8000:8000"
+    depends_on:
+      redis:
+        condition: service_healthy
+      vpn:
+        condition: service_healthy
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+    networks:
+      - app_network
+      - vpn_network
+    command: >
+      /bin/sh -c "python -c 'import redis; r=redis.Redis(host=\"redis\", port=6379); r.ping()' &&
+      gunicorn -k uvicorn.workers.UvicornWorker main_api:app --bind 0.0.0.0:8000"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
+  celery_worker:
+    build: .
+    deploy:
+      replicas: 3
+    depends_on:
+      redis:
+        condition: service_healthy
+      vpn:
+        condition: service_healthy
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+    networks:
+      - app_network
+      - vpn_network
+    command: >
+      /bin/sh -c "python -c 'import redis; r=redis.Redis(host=\"redis\", port=6379); r.ping()' &&
+      celery -A celery_tasks_for_scraping.celery_app worker --loglevel=info -E -Q scraping_queue"
+    restart: unless-stopped
+
+networks:
+  app_network:
+    driver: bridge
+  vpn_network:
+    driver: bridge
