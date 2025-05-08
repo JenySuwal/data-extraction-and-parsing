@@ -116,7 +116,7 @@ def scrape_tables_with_delivery(url):
         maximize=True, 
         locale_code="en", 
         skip_js_waits=True, 
-        headless=not DEBUG_MODE,  # Run in headful mode if DEBUG_MODE=True
+        headless=True,  # Run in headful mode if DEBUG_MODE=True
         agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
     ) as sb:
         try:
