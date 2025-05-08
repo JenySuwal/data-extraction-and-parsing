@@ -13,14 +13,6 @@ from pydentic_classes import GenericPartsData
 from clean_html import clean_html_task
 
 class TableDataParser:
-    # def __init__(self):
-    #     self.llm = OllamaLLM(
-    #         model="llama3",
-    #         # base_url="http://192.168.16.42:11434",
-    #         # base_url="http://192.168.20.194:11434",
-    #         base_url="http://localhost:11434",
-    #         temperature=0.1
-    #     )
     def __init__(self,api_key):
         self.llm = ChatOpenAI(
             model="gpt-4o",
@@ -40,8 +32,8 @@ class TableDataParser:
             **DO NOT INCLUDE ANY TEXT BEFORE/AFTER THE JSON**. 
 
             Fields to extract:
-            - thread_size: List of thread sizes (e.g., "2-56", "M6-0.5", "1/4-20 UNC")
-            - material_surface: List of materials (e.g., "Alloy Steel", "Black-Oxide Alloy Steel")
+            - threadseal_type_size: List of seal_type (e.g., shielded, unshielded, open)
+            - material_surface: List of materials (List of seal_type (e.g., shielded, unshielded, open))
 
             Rules:
             1. Output **ONLY** valid JSON.
@@ -49,13 +41,15 @@ class TableDataParser:
             3. Ensure that the values are directly enclosed in double quotes without any additional formatting.
             4. No explanations, comments, or formatting outside the JSON.
             5. If no material is found, use `"material_surface": ["unknown"]`.
+            6. Do not extract data from the examples given in the prompt.
+            7. Some of the materials surface are made up of more than one materials.
 
             Input Data:
             {raw_data}
 
             Output format (copy-paste this and fill in values):
             {{
-            "thread_size": [...],
+            "seal_type": [...],
             "material_surface": [...]
             }}
             """
@@ -80,8 +74,8 @@ class TableDataParser:
         json_str = json_match.group()
 
         json_str = re.sub(
-            r'"thread_size": \[(.*?)\]',
-            lambda m: '"thread_size": [' + ', '.join(
+            r'"seal_type": \[(.*?)\]',
+            lambda m: '"seal_type": [' + ', '.join(
                 ['"' + s.strip().replace('"', '').replace('\\', '') + '"'  
                 for s in m.group(1).split(',') if s.strip()]
             ) + ']',
@@ -95,9 +89,11 @@ class TableDataParser:
     
 
     # def parse_company_data(self, raw_data: list) -> GenericPartsData:
-        
     #     try:
     #         raw_response = self.llm.invoke(self.prompt.format(raw_data=raw_data))
+            
+    #         if isinstance(raw_response, AIMessage):
+    #             raw_response = raw_response.content  # Extract content from AIMessage
             
     #         cleaned_json = self.clean_json_output(raw_response)
     #         return self.output_parser.parse(cleaned_json)
@@ -110,21 +106,18 @@ class TableDataParser:
     #         return None
     def parse_company_data(self, raw_data: list) -> GenericPartsData:
         try:
-            raw_response = self.llm.invoke(self.prompt.format(raw_data=raw_data))
+            if isinstance(raw_data, list):
+                
+                raw_data = "\n".join(raw_data)
+                
             
-            if isinstance(raw_response, AIMessage):
-                raw_response = raw_response.content  # Extract content from AIMessage
+            formatted_data = "TABLE HEADERS:\n" + raw_data
             
-            cleaned_json = self.clean_json_output(raw_response)
-            return self.output_parser.parse(cleaned_json)
-            
-        except json.JSONDecodeError as e:
-            print(f"JSON Decode Error: {str(e)}")
-            return None
+            return self.chain.invoke({"raw_data": formatted_data})
         except Exception as e:
-            print(f"Error parsing data: {str(e)}")
-            return None
-
+            print(f"Parser error: {str(e)}")
+            return GenericPartsData(seal_type=[], material_surface=["unknown"])   
+        
     def process_tables_batch(self, tables: list) -> list:
         
         results = []

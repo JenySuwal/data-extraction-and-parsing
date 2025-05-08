@@ -130,22 +130,23 @@ class FinalDataframe:
             parsed_dict = json.loads(llm_output)
             keys = list(parsed_dict.keys())
 
-            header_df = header_df.copy()
-            current_cols = header_df.shape[1]
+            head_row_len = header_df.shape[0]
+            no_cols = header_df.shape[1]
 
+            
+            for i, key in enumerate(keys):
+                new_column_name = str(no_cols + 1)
+                header_df[new_column_name] = np.nan
+                header_df[new_column_name] = header_df[new_column_name].astype('object')
+                header_df.loc[head_row_len - 1, new_column_name] = key
+                no_cols += 1
 
-            # print(header_df)
-
-            for idx, key in enumerate(keys):
-                new_col_name = str(current_cols + idx + 1)
-                header_df[new_col_name] = np.nan
-                header_df[new_col_name] = header_df[new_col_name].astype('object')
-                header_df.iloc[-1, header_df.columns.get_loc(new_col_name)] = str(key)
-
+            
             combined = pd.concat([header_df.iloc[[-1]], body_df], ignore_index=True)
-            combined.columns = combined.iloc[0]
-            combined = combined.drop(0).reset_index(drop=True)
-            combined.columns = combined.columns.str.strip()
+            combined.columns = combined.iloc[0]  
+            combined = combined.drop(0).reset_index(drop=True)  
+            combined.columns = combined.columns.str.strip()  
+
             return combined
         except Exception as e:
             print(f"Error adding header: {e}")
@@ -260,45 +261,42 @@ class FinalDataframe:
     #     return df
     ######################################works for llama3##################################################
     # #########################################works for Openai API####################################################### 
+    # @staticmethod ########works for screw category
+    # def assign_thread_size(data_dict, dataframe):
+    #     thread_sizes = set()
+    #     def clean_value(value):           
+    #         return ''.join(
+    #             str(value)
+    #                 .replace('"', '')
+    #                 .replace('\\', '')
+    #                 .replace("\xa0", " ")
+    #                 .replace(' ', '')  
+    #         )  
+    #     for item in data_dict.get('thread_size', []):  
+    #         try:
+    #             cleaned_item = clean_value(item)
+    #             thread_sizes.add(cleaned_item)    
+    #         except Exception as e:
+    #             print(f"Error processing item: {item} - {e}")
+    #     if not thread_sizes:
+    #         return dataframe
+    #     df = dataframe.copy()
+    #     df.columns = [f"{col}_{i}" if col in df.columns[:i] else col for i, col in enumerate(df.columns)]
+    #     first_col = df.columns[0]
+    #     df['thread_size'] = None  
+    #     current_size = None
+    #     for idx, row in df.iterrows():
+    #         value_before = row[first_col]
+    #         cleaned_value = clean_value(value_before)
+    #         if cleaned_value in thread_sizes:
+    #             current_size = value_before  
+    #         df.at[idx, 'thread_size'] = current_size
+    #     mask = df[first_col].map(lambda x: clean_value(x) in thread_sizes)
+    #     df = df[~mask].reset_index(drop=True)
+    #     return df
     @staticmethod
-    def assign_thread_size(data_dict, dataframe):
-        thread_sizes = set()
-        def clean_value(value):           
-            return ''.join(
-                str(value)
-                    .replace('"', '')
-                    .replace('\\', '')
-                    .replace("\xa0", " ")
-                    .replace(' ', '')  
-            )  
-        for item in data_dict.get('thread_size', []):  
-            try:
-                cleaned_item = clean_value(item)
-                thread_sizes.add(cleaned_item)    
-            except Exception as e:
-                print(f"Error processing item: {item} - {e}")
-        if not thread_sizes:
-            return dataframe
-        df = dataframe.copy()
-        df.columns = [f"{col}_{i}" if col in df.columns[:i] else col for i, col in enumerate(df.columns)]
-        first_col = df.columns[0]
-        df['thread_size'] = None  
-        current_size = None
-        for idx, row in df.iterrows():
-            value_before = row[first_col]
-            cleaned_value = clean_value(value_before)
-            if cleaned_value in thread_sizes:
-                current_size = value_before  
-            df.at[idx, 'thread_size'] = current_size
-        mask = df[first_col].map(lambda x: clean_value(x) in thread_sizes)
-        df = df[~mask].reset_index(drop=True)
-        return df
-
-
-    @staticmethod
-    def assign_material_surface(data_dict, dataframe):
-        
-        materials = set()
+    def assign_seal_type(data_dict, dataframe):
+        seal_types = set()
 
         def clean_value(value):
             
@@ -307,32 +305,133 @@ class FinalDataframe:
                     .replace('"', '')
                     .replace('\\', '')
                     .replace("\xa0", " ")
-                    .replace(' ', '')  
-            )    
-        for item in data_dict.get('material_surface', []):           
-            try:  
+                    .replace(' ', '')
+            )
+
+        
+        for item in data_dict.get('seal_type', []):
+            try:
+                cleaned_item = clean_value(item)
+                seal_types.add(cleaned_item)
+            except Exception as e:
+                print(f"Error processing item: {item} - {e}")
+
+        if not seal_types:
+            return dataframe
+
+        df = dataframe.copy()
+
+      
+        df.columns = [f"{col}_{i}" if col in df.columns[:i] else col for i, col in enumerate(df.columns)]
+
+        first_col = df.columns[0]
+        df['seal_type'] = None
+        current_seal = None
+
+        for idx, row in df.iterrows():
+            original_value = row[first_col]
+            cleaned_value = clean_value(original_value)
+
+            if cleaned_value in seal_types:
+                current_seal = original_value  
+
+            df.at[idx, 'seal_type'] = current_seal
+
+      
+        mask = df[first_col].apply(lambda x: clean_value(x) in seal_types)
+
+        df = df[~mask].reset_index(drop=True)
+
+        return df
+
+    @staticmethod
+    def assign_material_surface(data_dict, dataframe):
+        materials = set()
+
+        def clean_value(value):
+            return ''.join(
+                str(value)
+                    .replace('"', '')
+                    .replace('\\', '')
+                    .replace("\xa0", " ")
+                    .replace(' ', '')
+            )
+
+        
+        for item in data_dict.get('material_surface', []):
+            try:
                 cleaned_item = clean_value(item)
                 materials.add(cleaned_item)
             except Exception as e:
-                print(f"Error processing item: {item} - {e}")      
+                print(f"Error processing item: {item} - {e}")
+
         if not materials:
-            return dataframe     
+            return dataframe
+
         df = dataframe.copy()
+
+        
         df.columns = [f"{col}_{i}" if col in df.columns[:i] else col for i, col in enumerate(df.columns)]
 
         first_col = df.columns[0]
         df['material_surface'] = None
-        current_size = None  
+        current_material = None
 
         for idx, row in df.iterrows():
-            value_before = row[first_col]
-            cleaned_value = clean_value(value_before)
+            original_value = row[first_col]
+            cleaned_value = clean_value(original_value)
+
             if cleaned_value in materials:
-                current_size = value_before  
-            df.at[idx, 'material_surface'] = current_size 
-        mask = df[first_col].map(lambda x: clean_value(x) in materials)   
-        df = df[~mask].reset_index(drop=True)     
+                current_material = original_value  
+
+            df.at[idx, 'material_surface'] = current_material
+
+        
+        mask = df[first_col].apply(lambda x: clean_value(x) in materials)
+
+        df = df[~mask].reset_index(drop=True)
+
         return df
+
+
+    # @staticmethod
+    # def assign_material_surface(data_dict, dataframe):
+        
+    #     materials = set()
+
+    #     def clean_value(value):
+            
+    #         return ''.join(
+    #             str(value)
+    #                 .replace('"', '')
+    #                 .replace('\\', '')
+    #                 .replace("\xa0", " ")
+    #                 .replace(' ', '')  
+    #         )    
+    #     for item in data_dict.get('material_surface', []):           
+    #         try:  
+    #             cleaned_item = clean_value(item)
+    #             materials.add(cleaned_item)
+    #         except Exception as e:
+    #             print(f"Error processing item: {item} - {e}")      
+    #     if not materials:
+    #         return dataframe     
+    #     df = dataframe.copy()
+    #     df.columns = [f"{col}_{i}" if col in df.columns[:i] else col for i, col in enumerate(df.columns)]
+
+    #     first_col = df.columns[0]
+    #     df['material_surface'] = None
+    #     current_size = None  
+
+    #     for idx, row in df.iterrows():
+    #         value_before = row[first_col]
+    #         cleaned_value = clean_value(value_before)
+    #         if cleaned_value in materials:
+    #             current_size = value_before  
+    #         df.at[idx, 'material_surface'] = current_size 
+    #     mask = df[first_col].map(lambda x: clean_value(x) in materials)   
+    #     df = df[~mask].reset_index(drop=True)     
+    #     return df
     
 
     @staticmethod
@@ -511,7 +610,7 @@ def save_dataframes_to_s3(dataframes, bucket_name, file_key, url):
     except Exception as e:
         print(f"Save error: {e}")
 @celery_app.task(name="parse_task")
-def parse_task(bucket_name, file_key):
+def parse_task(bucket_name, file_key, url=None):
     # print(f"Downloading {file_key} from bucket {bucket_name}")
     os.makedirs("./temp", exist_ok=True)
     local_filename = f"./temp/{file_key.split('/')[-1]}"
@@ -530,7 +629,7 @@ def parse_task(bucket_name, file_key):
     final_data.process_all_tables()
 
     parsed_filename = local_filename.replace(".html", ".xlsx")
-    save_dataframes_to_s3(final_data.processed_dfs, bucket_name, file_key)
+    save_dataframes_to_s3(final_data.processed_dfs, bucket_name, file_key, url)
 
     end_time = time.time()
     print(f"Processing completed in {end_time - start_time:.2f} seconds")

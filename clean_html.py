@@ -85,6 +85,35 @@ def ensure_thead_between_table_and_tbody(html: str) -> str:
                 new_thead.append(tr)
  
     return str(soup)
+
+def move_orphan_ths_to_tbody(html: str) -> str:
+    soup = BeautifulSoup(html, 'html.parser')
+
+    for table in soup.find_all('table'):
+        thead = table.find('thead')
+        tbody = table.find('tbody')
+
+        if not thead or not tbody:
+            continue
+
+
+        orphan_ths = [child for child in thead.children 
+                     if isinstance(child, Tag) and child.name == 'th']
+
+        for th in orphan_ths:
+
+            new_tr = soup.new_tag('tr')
+            th.wrap(new_tr)
+            
+
+            tbody.insert(0, new_tr)
+
+   
+        if not thead.find_all(True): 
+            thead.decompose()
+
+    return str(soup)
+
 def ensure_tbody_after_thead(html: str) -> str:
     soup = BeautifulSoup(html, 'html.parser')
 
@@ -141,6 +170,59 @@ def multiple_tbody_in_table(html: str) -> str:
                 tbody.unwrap()  
  
     return str(soup)
+def split_tbodies_into_tables(html: str) -> str:
+    soup = BeautifulSoup(html, "html.parser")
+
+    for table in soup.find_all("table"):
+        tbodies = table.find_all("tbody", recursive=False)
+
+        if len(tbodies) <= 1:
+            continue
+
+        new_tables = []
+        for tbody in tbodies:
+            new_table = soup.new_tag("table")
+            tbody.extract()
+            new_table.append(tbody)
+            new_tables.append(new_table)
+
+        table.insert_after(*new_tables)
+        table.decompose()
+
+    return str(soup)
+
+def merge_incomplete_rows(html: str) -> str:
+    soup = BeautifulSoup(html, "html.parser")
+
+    for table in soup.find_all("table"):
+        rows = table.find_all("tr")
+        i = 0
+        while i < len(rows) - 1:
+            td_list = rows[i].find_all("td")
+            if len(td_list) == 2 and not td_list[1].get_text(strip=True):
+                next_td_list = rows[i+1].find_all("td")
+                if len(next_td_list) == 2:
+                    td_list[0].string = td_list[0].get_text(strip=True) + ' ' + next_td_list[0].get_text(strip=True)
+                    td_list[1].string = next_td_list[1].get_text(strip=True)
+                    rows[i+1].decompose()
+                    rows = table.find_all("tr")
+                    continue
+            i += 1
+
+    return str(soup)
+
+def process_and_clean_html(html_content: str) -> str:
+    cleaned_html = clean_html(html_content)
+    fixed_html = move_orphan_ths_to_tbody(cleaned_html)
+    fixed_html = ensure_thead_between_table_and_tbody(fixed_html)
+     
+    fixed_html = ensure_tbody_after_thead(fixed_html)
+
+    fixed_html = split_tbodies_into_tables(fixed_html)
+    fixed_html = merge_incomplete_rows(fixed_html)
+    fully_processed_html = multiple_tbody_in_table(fixed_html)
+    
+    return fully_processed_html
 
 def build_block_tree(html_content, max_words=50):
     cleaned_html = clean_html(html_content)
