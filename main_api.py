@@ -7,7 +7,19 @@ import json
 from celery_tasks_for_scraping import celery_app, process_batch
 from table_parsing import parse_task
 from typing import List
+from fastapi.middleware.cors import CORSMiddleware
+
 app = FastAPI()
+
+# Configure CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allows all origins (for development only)
+    allow_credentials=True,
+    allow_methods=["*"],  # Allows all methods (GET, POST, etc.)
+    allow_headers=["*"],  # Allows all headers
+)
+
 
 redis_client = redis.Redis(host="localhost", port=6379, db=0, decode_responses=True)
 
