@@ -6,7 +6,6 @@ import random
 import logging
 from datetime import datetime
 from urllib.parse import urlparse
-
 import boto3
 import requests
 from botocore.exceptions import NoCredentialsError
@@ -78,7 +77,7 @@ def scrape_tables_with_delivery(url):
         maximize=True,
         locale_code="en",
         skip_js_waits=True,
-        headless=False,
+        headless=True,
     ) as sb:
         try:
             start_time = time.time()
