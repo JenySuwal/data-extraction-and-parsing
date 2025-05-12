@@ -68,7 +68,9 @@ def scroll_to_view(driver, element):
 
 def scrape_tables_with_delivery(url):
     """Scrape tables from URL including delivery information."""
+    logger.info(f"Location:{get_address()}")
     logger.info(f"Starting to scrape: {url}")
+    
     all_tables_html = []
 
     with SB(
