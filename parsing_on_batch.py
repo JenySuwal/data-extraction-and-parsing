@@ -1,5 +1,4 @@
 from langchain_core.messages import AIMessage
-
 import json
 import re
 from bs4 import BeautifulSoup
@@ -32,7 +31,7 @@ class TableDataParser:
             **DO NOT INCLUDE ANY TEXT BEFORE/AFTER THE JSON**. 
 
             Fields to extract:
-            - threadseal_type_size: List of seal_type (e.g., shielded, unshielded, open)
+            - seal_type_size: List of seal_type (e.g., shielded, unshielded, open)
             - material_surface: List of materials (List of seal_type (e.g., shielded, unshielded, open))
 
             Rules:
@@ -122,7 +121,7 @@ class TableDataParser:
         
         results = []
         for header_group in tables:
-            if header_group:  # Check if headers exist
+            if header_group:  
                 raw_data = "\n".join(header_group)
                 try:
                     result = self.parse_company_data(raw_data)
@@ -150,37 +149,10 @@ class TableDataParser:
         
         return extracted_headers
 
-
-
-# def process_html_and_extract_data(bucket_name, file_key):
-#     table_parser = TableDataParser()
-
-    
-#     html_content = clean_html_task(bucket_name, file_key)
-
-    
-#     if not html_content:
-#         print("Error: No HTML content retrieved!")
-#         return []
-
-    
-#     html_tables_heads = table_parser.extract_tables_and_headers(html_content)
-
-#     if not html_tables_heads:
-#         print("Error: No tables found in HTML!")
-#         return []
-
-    
-#     parsed_data = table_parser.process_tables_batch(html_tables_heads)
-
-#     print(f"Parsed Data: {parsed_data}")
-#     return parsed_data
-
 import os
 def get_openai_api_key():
     load_dotenv()
     api_key=os.getenv("openai_api_key")
-
     return api_key
 
 def process_html_and_extract_data(bucket_name, file_key):

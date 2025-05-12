@@ -4,6 +4,8 @@ google-chrome-stable_current_amd64.deb
 
 chromedriver-linux64.zip
 
+chromedriver_linux64
+
 __pycache__
 
 
@@ -16,6 +18,7 @@ www_mcmaster_com
 
 mcmaster_excel
 
+output
 
 S3_downloads
 

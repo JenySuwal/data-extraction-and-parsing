@@ -14,25 +14,15 @@ def create_dataframes(bucket_name, file_key):
     for table in tables:
         thead_data = []
         tbody_data = []
-
-        # thead = table.find("thead")
-        # if thead:
-        #     for row in thead.find_all("tr"):
-        #         cols = row.find_all(["th", "td"])
-        #         thead_data.append([col.get_text(strip=True) for col in cols])
-
-        # tbody = table.find("tbody")
         thead = table.find("thead")
-        # print(thead)
         if thead:
             for row in thead.find_all("tr"):
                 cols = row.find_all(["th", "td"])
-                # Convert <td> to <th> inside <thead>
                 for col in cols:
                     if col.name == "td":
                         col.name = "th"
                 thead_data.append([col.get_text(strip=True) for col in cols])
-            # print(f"Processed thead: {thead_data}")
+
  
         tbody = table.find("tbody")
         if tbody:
@@ -55,8 +45,13 @@ def create_dataframes(bucket_name, file_key):
         
         thead_df = pd.DataFrame([row + [""] * (max_thead_cols - len(row)) for row in thead_data])
         tbody_df = pd.DataFrame([row + [""] * (max_tbody_cols - len(row)) for row in tbody_data])
-        # print(thead_df)
+        print(tbody_df)
         
+        try:
+            tbody_df = tbody_df[tbody_df.iloc[:, 0] != ""].reset_index(drop=True)
+        except IndexError:
+            print("tbody_df has no columns. Skipping...")
+            return None, None
         thead_dataframes.append(thead_df)
         tbody_dataframes.append(tbody_df)
         # print(f"Processed table with {(thead_data)} header rows and {(tbody_data)} body rows.")

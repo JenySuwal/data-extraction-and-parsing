@@ -45,28 +45,14 @@ class FinalDataframe:
             print(f"Initialization error: {e}")
             self.header_dfs, self.body_dfs, self.llm_output_list, self.total_tables, self.processed_dfs = [], [], [], 0, []
 
-    # def process_all_tables(self):
-    #     for i in range(self.total_tables):
-    #         header_df = self.header_dfs[i].copy()
-    #         body_df = self.body_dfs[i]
-    #         llm_output = self.llm_output_list[i]
-
-    #         merged_df = self.add_header(llm_output, header_df, body_df)
-    #         if merged_df is not None:
-    #             data_dict = json.loads(llm_output)
-    #             merged_df = self.assign_thread_size(data_dict, merged_df)
-    #             merged_df = self.assign_material_surface(data_dict, merged_df)
-    #             final_df = self.merge_header(header_df, merged_df)
-    #             self.processed_dfs.append(final_df)
-    #         else:
-    #             print(f"Skipping table {i+1} due to processing error.")
 
     def process_all_tables(self):
         for i in range(self.total_tables):
             try:
                 header_df = self.header_dfs[i].copy()
                 body_df = self.body_dfs[i]
-                llm_output = self.llm_output_list[i]
+                for i in range(len(self.llm_output_list)):
+                    llm_output = self.llm_output_list[i]
             except IndexError as e:
                 print(f"[IndexError] At table index {i}:")
                 print(f" - total_tables: {self.total_tables}")
@@ -79,7 +65,7 @@ class FinalDataframe:
             if merged_df is not None:
                 try:
                     data_dict = json.loads(llm_output)
-                    merged_df = self.assign_thread_size(data_dict, merged_df)
+                    merged_df = self.assign_seal_type(data_dict, merged_df)
                     merged_df = self.assign_material_surface(data_dict, merged_df)
                     final_df = self.merge_header(header_df, merged_df)
                     self.processed_dfs.append(final_df)
@@ -87,41 +73,6 @@ class FinalDataframe:
                     print(f"[ProcessingError] at table {i+1}: {e}")
             else:
                 print(f"Skipping table {i+1} due to processing error.")
-
-    # def process_all_tables(self):
-    #     for i in range(self.total_tables):
-    #         header_df = self.header_dfs[i].copy()
-    #         body_df = self.body_dfs[i]
-    #         llm_output = self.llm_output_list[i]
-
-    #         # Check if the LLM output contains the 'content' field
-    #         if hasattr(llm_output, 'content'):
-    #             llm_content = llm_output.content
-    #         else:
-    #             print(f"Error: No content in LLM output for table {i+1}.")
-    #             continue
-
-    #         if llm_content:
-    #             # Clean the content to remove code block formatting
-    #             cleaned_content = llm_content.strip('```json\n').strip('```').strip()
-                
-    #             try:
-    #                 # Try parsing the cleaned content as JSON
-    #                 data_dict = json.loads(cleaned_content)
-                    
-    #                 merged_df = self.add_header(cleaned_content, header_df, body_df)
-    #                 if merged_df is not None:
-    #                     merged_df = self.assign_thread_size(data_dict, merged_df)
-    #                     merged_df = self.assign_material_surface(data_dict, merged_df)
-    #                     final_df = self.merge_header(header_df, merged_df)
-    #                     self.processed_dfs.append(final_df)
-    #                 else:
-    #                     print(f"Skipping table {i+1} due to processing error.")
-    #             except json.JSONDecodeError as e:
-    #                 print(f"Error decoding JSON for table {i+1}: {e}")
-    #         else:
-    #             print(f"Empty LLM output for table {i+1}.")
-
 
 
     @staticmethod
@@ -151,115 +102,7 @@ class FinalDataframe:
         except Exception as e:
             print(f"Error adding header: {e}")
             return None
-#####################################json format using the llama3 model########################################
-    # @staticmethod
-    # def assign_thread_size(data_dict, dataframe):
-    #     # Initialize an empty set for thread sizes
-    #     thread_sizes = set()
-       
-    #     # Parse the JSON strings in data_dict to extract actual thread sizes
-    #     for item in data_dict.get('thread_size', []):
-    #         try:
-    #             # Load the JSON string into a Python dictionary
-    #             json_data = json.loads(item)
-    #             # Extract and clean the thread size values
-    #             sizes = [size.replace('"', '').replace('\\', '').replace("\xa0", " ")  for size in json_data.get('thread_size', [])]
-    #             thread_sizes.update(sizes)
-    #         except (json.JSONDecodeError, TypeError):
-    #             pass  # Handle any JSON parsing errors
-       
-    #     # If no thread sizes were found, return the dataframe as is
-    #     if not thread_sizes:
-    #         return dataframe
-       
-    #     # Create a copy of the dataframe to avoid modifying the original
-    #     df = dataframe.copy()
-    #     first_col = df.columns[0]  # Get the first column name
-       
-    #     # Add a new column for thread sizes
-    #     df['thread_size'] = None
-    #     current_size = None  # Variable to track the current thread size
-       
-    #     # Iterate over each row in the dataframe
-    #     for idx, row in df.iterrows():
-    #         # Get the value from the first column
-    #         value_before = row[first_col]
-           
-    #         # Handle cases where value_before might be a Series
-    #         if isinstance(value_before, pd.Series):
-    #             value_before = value_before.iloc[0] if not value_before.empty else ''
-           
-    #         # Clean the value for comparison
-    #         value = value_before.replace('"', '').replace('\\', '').replace("\xa0", " ")
-           
-    #         # Check if the cleaned value matches any thread size
-    #         if value in thread_sizes:
-    #             current_size = value_before  # Update the current thread size
-           
-    #         # Assign the current thread size to the row
-    #         df.at[idx, 'thread_size'] = current_size
-       
-    #     # Filter out rows where the first column value matches a thread size
-    #     df = df[~df[first_col].apply(
-    #         lambda x: x.replace('"', '').replace('\\', '').replace("\xa0", " ") in thread_sizes
-    #     )].reset_index(drop=True)
-       
-    #     return df
 
-    # @staticmethod
-    # def assign_material_surface(data_dict, dataframe):
-    #     # Initialize an empty set for material surfaces
-    #     materials = set()
-       
-    #     # Parse the JSON strings in data_dict to extract actual material surfaces
-    #     for item in data_dict.get('material_surface', []):
-    #         try:
-    #             # Load the JSON string into a Python dictionary
-    #             json_data = json.loads(item)
-    #             # Extract and clean the material surface values
-    #             material_values = [mat.replace('"', '').replace('\\', '') for mat in json_data.get('material_surface', [])]
-    #             materials.update(material_values)
-    #         except (json.JSONDecodeError, TypeError):
-    #             pass  # Handle any JSON parsing errors
-       
-    #     # If no material surfaces were found, return the dataframe as is
-    #     if not materials:
-    #         return dataframe
-       
-    #     # Create a copy of the dataframe to avoid modifying the original
-    #     df = dataframe.copy()
-    #     first_col = df.columns[0]  # Get the first column name
-       
-    #     # Add a new column for material surfaces
-    #     df['material_surface'] = None
-    #     current_material = None  # Variable to track the current material surface
-       
-    #     # Iterate over each row in the dataframe
-    #     for idx, row in df.iterrows():
-    #         # Get the value from the first column
-    #         value_before = row[first_col]
-           
-    #         # Handle cases where value_before might be a Series
-    #         if isinstance(value_before, pd.Series):
-    #             value_before = value_before.iloc[0] if not value_before.empty else ''
-           
-    #         # Clean the value for comparison
-    #         value = value_before.replace('"', '').replace('\\', '').replace("\xa0", " ")
-           
-    #         # Check if the cleaned value matches any material surface
-    #         if value in materials:
-    #             current_material = value_before  # Update the current material surface
-           
-    #         # Assign the current material surface to the row
-    #         df.at[idx, 'material_surface'] = current_material
-       
-    #     # Filter out rows where the first column value matches a material surface
-    #     df = df[~df[first_col].apply(
-    #         lambda x: x.replace('"', '').replace('\\', '').replace("\xa0", " ") in materials
-    #     )].reset_index(drop=True)
-       
-    #     return df
-    ######################################works for llama3##################################################
     # #########################################works for Openai API####################################################### 
     # @staticmethod ########works for screw category
     # def assign_thread_size(data_dict, dataframe):
@@ -306,22 +149,16 @@ class FinalDataframe:
                     .replace('\\', '')
                     .replace("\xa0", " ")
                     .replace(' ', '')
-            )
-
-        
+            )     
         for item in data_dict.get('seal_type', []):
             try:
                 cleaned_item = clean_value(item)
                 seal_types.add(cleaned_item)
             except Exception as e:
                 print(f"Error processing item: {item} - {e}")
-
         if not seal_types:
             return dataframe
-
         df = dataframe.copy()
-
-      
         df.columns = [f"{col}_{i}" if col in df.columns[:i] else col for i, col in enumerate(df.columns)]
 
         first_col = df.columns[0]
@@ -331,17 +168,11 @@ class FinalDataframe:
         for idx, row in df.iterrows():
             original_value = row[first_col]
             cleaned_value = clean_value(original_value)
-
             if cleaned_value in seal_types:
                 current_seal = original_value  
-
-            df.at[idx, 'seal_type'] = current_seal
-
-      
+            df.at[idx, 'seal_type'] = current_seal  
         mask = df[first_col].apply(lambda x: clean_value(x) in seal_types)
-
         df = df[~mask].reset_index(drop=True)
-
         return df
 
     @staticmethod
@@ -364,13 +195,9 @@ class FinalDataframe:
                 materials.add(cleaned_item)
             except Exception as e:
                 print(f"Error processing item: {item} - {e}")
-
         if not materials:
             return dataframe
-
         df = dataframe.copy()
-
-        
         df.columns = [f"{col}_{i}" if col in df.columns[:i] else col for i, col in enumerate(df.columns)]
 
         first_col = df.columns[0]
@@ -380,17 +207,11 @@ class FinalDataframe:
         for idx, row in df.iterrows():
             original_value = row[first_col]
             cleaned_value = clean_value(original_value)
-
             if cleaned_value in materials:
                 current_material = original_value  
-
             df.at[idx, 'material_surface'] = current_material
-
-        
         mask = df[first_col].apply(lambda x: clean_value(x) in materials)
-
         df = df[~mask].reset_index(drop=True)
-
         return df
 
 
@@ -439,17 +260,9 @@ class FinalDataframe:
         try:
             header_columns = header_df.columns.tolist()
             assign_columns = processed_df.columns.tolist()
-
-            
             column_mapping = {header_col: assign_col for header_col, assign_col in zip(header_columns, assign_columns)}
-
-            
             header_df_renamed = header_df.rename(columns=column_mapping)
-
-            
             merged_df = pd.concat([header_df_renamed, processed_df], axis=0, ignore_index=True)
-
-            
             merged_df.columns = range(len(merged_df.columns))
 
             return merged_df
@@ -537,6 +350,22 @@ class FinalDataframe:
 #         print(f"Save error: {e}")
 def extract_url_parts(url):
     """Extract and return different parts of a URL as a dictionary"""
+    if url is None:
+        return {
+            'netloc': '',
+            'path': '',
+            'path_parts': [],
+            'last_part': 'unknown',
+            'second_last_part': '',
+            'third_last_part': '',
+            'full_url': ''
+        }
+    
+    if isinstance(url, bytes):
+        url = url.decode('utf-8')
+    elif not isinstance(url, str):
+        url = str(url)  # Convert numbers/other types to string
+    
     parsed = urlparse(url)
     path_parts = [part for part in parsed.path.split('/') if part]
     
@@ -544,7 +373,7 @@ def extract_url_parts(url):
         'netloc': parsed.netloc,
         'path': parsed.path,
         'path_parts': path_parts,
-        'last_part': path_parts[-1] if path_parts else '',
+        'last_part': path_parts[-1] if path_parts else 'unknown',
         'second_last_part': path_parts[-2] if len(path_parts) > 1 else '',
         'third_last_part': path_parts[-3] if len(path_parts) > 2 else '',
         'full_url': url
@@ -555,19 +384,24 @@ def create_folder_structure(url):
     parts = extract_url_parts(url)
     path_parts = parts['path_parts']
     
-    # Ensure we have at least 3 parts (products/category/item)
-    if len(path_parts) < 3:
-        path_parts += ['misc'] * (3 - len(path_parts))  # Pad with 'misc' if needed
-
+    # If URL is invalid/None, use default structure
+    if not path_parts:
+        return {
+            'main_folder': 'unknown',
+            'sub_folder': 'unknown',
+            'file_name': 'data.xlsx',
+            'full_path': 'unknown/unknown/data.xlsx'
+        }
+    
     # Clean each part (remove numbers/special chars)
     def clean(name):
         name = re.sub(r'[\d~-]+$', '', name)  # Remove trailing numbers/~
         name = re.sub(r'[^\w-]+', '_', name)  # Replace special chars
         return name.strip('_-').lower()
     
-    main_folder = clean(path_parts[1])     # 'screws'
-    sub_folder = clean(path_parts[2])      # 'flat_head_screws' or 'clamps'
-    file_name = clean(path_parts[-1])      # Last part as filename
+    main_folder = clean(path_parts[1]) if len(path_parts) > 1 else 'unknown'
+    sub_folder = clean(path_parts[2]) if len(path_parts) > 2 else 'unknown'
+    file_name = clean(path_parts[-1]) if path_parts else 'data.xlsx'
     
     return {
         'main_folder': main_folder,
@@ -575,14 +409,13 @@ def create_folder_structure(url):
         'file_name': f"{file_name}.xlsx",
         'full_path': f"{main_folder}/{sub_folder}/{file_name}.xlsx"
     }
-
-def save_dataframes_to_s3(dataframes, bucket_name, file_key, url):
-    """Save dataframes to S3 with consistent 3-level folder structure"""
+def save_dataframes_to_s3(dataframes, bucket_name, file_key, url=None):
+    """Save dataframes to S3 with consistent folder structure"""
     if not dataframes:
         print("No data to save")
         return
 
-    # Create folder structure
+    # Create folder structure (handles None URLs)
     structure = create_folder_structure(url)
     
     # Local paths
@@ -603,7 +436,7 @@ def save_dataframes_to_s3(dataframes, bucket_name, file_key, url):
                     print(f"Skipping empty DataFrame at index {idx}")
 
         # S3 path maintains the same structure
-        s3_key = f"{structure['main_folder']}/{structure['sub_folder']}/{structure['file_name']}"
+        s3_key = structure['full_path']
         s3_client.upload_file(local_filename, bucket_name, s3_key)
         print(f"Successfully uploaded to {s3_key}")
 
@@ -611,26 +444,23 @@ def save_dataframes_to_s3(dataframes, bucket_name, file_key, url):
         print(f"Save error: {e}")
 @celery_app.task(name="parse_task")
 def parse_task(bucket_name, file_key, url=None):
-    # print(f"Downloading {file_key} from bucket {bucket_name}")
+    if url is not None:
+        if isinstance(url, bytes):
+            url = url.decode('utf-8')
+        elif not isinstance(url, str):
+            url = str(url) 
     os.makedirs("./temp", exist_ok=True)
     local_filename = f"./temp/{file_key.split('/')[-1]}"
     try:
         s3_client.download_file(bucket_name, file_key, local_filename)
-        # print(f"Downloaded {file_key} to {local_filename}")
     except Exception as e:
         print(f"Failed to download {file_key} from S3: {e}")
         return {"error": f"Failed to download file: {e}"}
-
-
     start_time = time.time()
-
     final_data = FinalDataframe(bucket_name, file_key)
-    # print(f"Initialized FinalDataframe with {final_data.total_tables} tables")
     final_data.process_all_tables()
-
-    parsed_filename = local_filename.replace(".html", ".xlsx")
+    # parsed_filename = local_filename.replace(".html", ".xlsx")
     save_dataframes_to_s3(final_data.processed_dfs, bucket_name, file_key, url)
-
     end_time = time.time()
     print(f"Processing completed in {end_time - start_time:.2f} seconds")
     return f"Processing completed in {end_time - start_time:.2f} seconds"

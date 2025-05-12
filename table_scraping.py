@@ -27,9 +27,7 @@ SLEEP_TIME_MIN = 2
 SLEEP_TIME_MAX = 5
 S3_BUCKET_NAME = "scraped-unstructured-data"
 S3_REGION = "ap-south-1"
-DEBUG_MODE = True  # Set to False for production
 
-# AWS Setup
 s3_client = boto3.client("s3", region_name=S3_REGION)
 
 def sleep_random():
@@ -52,233 +50,324 @@ def upload_to_s3(local_file, s3_path):
         return None
 
 def get_address():
-    """Get geographical location information."""
     try:
         response = requests.get("http://ip-api.com/json", timeout=5)
         if response.status_code == 200:
             data = response.json()
-            return f"{data.get('city')}, {data.get('regionName')}, {data.get('country')}"
-    except Exception as e:
-        logger.warning(f"Couldn't get location: {e}")
-        return f"Error: {str(e)}"
-    return "Address Not Available"
+            city = data.get("city", "City not available")
+            region = data.get("regionName", "Region not available")
+            country = data.get("country", "Country not available")
+            return f"<td>{city}, {region}, {country}</td>"
+        else:
+            return "<td>Unknown Location</td>"
+    except requests.RequestException:
+        return "<td>Unknown Location</td>"
 
 def scroll_to_view(driver, element):
-    """Scroll to make an element visible in the viewport."""
-    try:
-        driver.execute_script(
-            "arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});", 
-            element
-        )
-        sleep_random()
-    except Exception as e:
-        logger.warning(f"Couldn't scroll to element: {e}")
-
-def check_visibility(driver, xpath):
-    """Check if element is visible on the page."""
-    try:
-        elements = driver.find_elements(By.XPATH, xpath)
-        visible = len(elements) > 0
-        logger.debug(f"Visibility check for {xpath}: {visible}")
-        return visible
-    except Exception as e:
-        logger.warning(f"Visibility check failed: {e}")
-        return False
-
-def scroll_whole_page(driver):
-    """Scrolls the page to load all content."""
-    if not check_visibility(driver, "//table"):
-        logger.warning("No tables found during initial check")
-        return False
-    
-    last_height = driver.execute_script("return document.body.scrollHeight")
-    scroll_attempts = 0
-    
-    while scroll_attempts < 3:  # Limit scroll attempts
-        driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-        sleep_random()
-        new_height = driver.execute_script("return document.body.scrollHeight")
-        
-        if new_height == last_height:
-            break
-        last_height = new_height
-        scroll_attempts += 1
-    
-    logger.info(f"Finished scrolling after {scroll_attempts} attempts")
+    driver.execute_script("arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});", element)
+    sleep_random()
 
 def scrape_tables_with_delivery(url):
     """Scrape tables from URL including delivery information."""
     logger.info(f"Starting to scrape: {url}")
-    
+    all_tables_html = []
+
     with SB(
-        uc=True, 
-        incognito=True, 
-        maximize=True, 
-        locale_code="en", 
-        skip_js_waits=True, 
-        headless=True,  # Run in headful mode if DEBUG_MODE=True
-        agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+        uc=True,
+        incognito=True,
+        maximize=True,
+        locale_code="en",
+        skip_js_waits=True,
+        headless=False,
     ) as sb:
         try:
-            # Track timing
             start_time = time.time()
-            
-            # Navigate to URL
-            logger.info(f"Loading URL: {url}")
-            sb.driver.get(url)
+            sb.open(url)
             sleep_random()
-            
-            # Scroll to load content
-            logger.info("Scrolling page to load content")
-            scroll_whole_page(sb.driver)
-            
-            # Verify tables exist
-            if not check_visibility(sb.driver, "//table"):
-                logger.error("No tables found after scrolling")
-                return None
-            
-            # Get address info
+
             address = get_address()
             logger.info(f"Detected location: {address}")
-            
-            # Find all tables
-            tables = sb.driver.find_elements(By.XPATH, "//table[contains(@class,'hn')]")
+
+            original_window = sb.driver.current_window_handle
+
+            def get_stable_tables():
+                """Get fresh table references with retry logic"""
+                for _ in range(3):
+                    try:
+                        tables = sb.find_elements("table.hn, table[class^='ProductTable_table']")
+                        if tables:
+                            return tables
+                    except Exception as e:
+                        logger.warning(f"Error getting tables: {str(e)}")
+                    sleep_random(0.5)
+                raise Exception("Failed to get stable table references")
+
+            tables = get_stable_tables()
             logger.info(f"Found {len(tables)} tables to process")
-            
-            processed_tables = []
-            
-            for table_idx, table in enumerate(tables, 1):
+
+            for table_idx in range(len(tables)):
                 try:
-                    logger.info(f"Processing table {table_idx}/{len(tables)}")
+                    logger.info(f"Processing table {table_idx + 1}/{len(tables)}")
                     
-                    # Get table title/header if available
+                    # Get fresh table reference
+                    tables = get_stable_tables()
+                    table = tables[table_idx]
+
+                    # Get material info
                     try:
                         material_div = table.find_element(
                             By.XPATH,
                             ".//preceding::div[contains(@class,'aq') and contains(@class,'id') and contains(@class,'ju')][1]"
                         )
-                        material_text = material_div.find_element(By.XPATH, ".//span").text.strip()
-                        type_html = f"<tr><th colspan='100%'>{material_text}</th></tr>" if material_text else ""
-                        logger.debug(f"Found table header: {material_text}")
-                    except Exception as e:
-                        type_html = ""
-                        logger.debug("No table header found")
-                    
-                    # Process rows
-                    rows = table.find_elements(By.XPATH, ".//tr")
-                    logger.debug(f"Found {len(rows)} rows in table")
-                    processed_rows = []
-                    
-                    for row_idx, row in enumerate(rows, 1):
+                        span = material_div.find_element(By.XPATH, ".//span")
+                        material_text = span.text.strip()
+                        type_of_material_html = f"<tr><th>{material_text}</th></tr>"
+                    except Exception:
+                        type_of_material_html = ""
+
+                    # Get stable rows reference
+                    def get_stable_rows():
+                        for _ in range(3):
+                            try:
+                                tables = get_stable_tables()
+                                table = tables[table_idx]
+                                rows = table.find_elements(By.XPATH, ".//tr")
+                                if rows:
+                                    return rows
+                            except Exception as e:
+                                logger.warning(f"Error getting rows: {str(e)}")
+                            sleep_random(0.5)
+                        raise Exception("Failed to get stable row references")
+
+                    rows = get_stable_rows()
+                    all_row_data = []
+                    max_parts_in_any_row = 0
+
+                    for row_idx in range(len(rows)):
                         try:
-                            logger.debug(f"Processing row {row_idx}/{len(rows)}")
-                            
-                            # Get all cells and part links
-                            cells = row.find_elements(By.XPATH, ".//td|.//th")
-                            part_links = row.find_elements(By.XPATH, ".//a[contains(@class,'PartNbrLnk')]")
-                            delivery_dates = []
-                            
-                            logger.debug(f"Found {len(part_links)} part links in row")
-                            
-                            for link_idx, part_link in enumerate(part_links, 1):
-                                part_number = part_link.text.strip()
-                                delivery_date = "Delivery info not found"
+                            # Refresh row reference
+                            rows = get_stable_rows()
+                            if row_idx >= len(rows):
+                                logger.warning(f"Row index {row_idx} out of bounds (max {len(rows)-1}), skipping")
+                                continue
                                 
+                            r = rows[row_idx]
+                            all_details = []
+                            
+                            # Find part numbers in current row
+                            part_number_elements = r.find_elements(
+                                By.XPATH,
+                                ".//a[contains(@class,'PartNbrLnk')] | "
+                                ".//a[starts-with(@class, 'PartNumberCell_partNumberLink')]//span"
+                            )
+                            part_count = len(part_number_elements)
+                            max_parts_in_any_row = max(max_parts_in_any_row, part_count)
+
+                            for part_idx, part_number_el in enumerate(part_number_elements):
                                 try:
-                                    logger.debug(f"Processing part {link_idx}/{len(part_links)}: {part_number}")
-                                    
-                                    # Click part link
-                                    scroll_to_view(sb.driver, part_link)
-                                    part_link.click()
-                                    logger.debug("Clicked part link")
-                                    
-                                    # Handle quantity input
+                                    # Refresh element reference in case it's stale
+                                    rows = get_stable_rows()
+                                    r = rows[row_idx]
+                                    part_number_elements = r.find_elements(
+                                        By.XPATH,
+                                        ".//a[contains(@class,'PartNbrLnk')] | "
+                                        ".//a[starts-with(@class, 'PartNumberCell_partNumberLink')]//span"
+                                    )
+                                    part_number_el = part_number_elements[part_idx]
+                                    part_number = part_number_el.text.strip()
+                                    if not part_number:
+                                        continue
+
+                                    logger.debug(f"Processing part number: {part_number}")
+
+                                    # Click part number with retry
+                                    clicked = False
+                                    for _ in range(3):
+                                        try:
+                                            scroll_to_view(sb.driver, part_number_el)
+                                            part_number_el.click()
+                                            clicked = True
+                                            break
+                                        except Exception as e:
+                                            logger.warning(f"Click attempt failed: {str(e)}")
+                                            sleep_random(0.5)
+                                            # Refresh references
+                                            tables = get_stable_tables()
+                                            table = tables[table_idx]
+                                            rows = get_stable_rows()
+                                            r = rows[row_idx]
+                                            part_number_elements = r.find_elements(
+                                                By.XPATH,
+                                                ".//a[contains(@class,'PartNbrLnk')] | "
+                                                ".//a[starts-with(@class, 'PartNumberCell_partNumberLink')]//span"
+                                            )
+                                            if part_idx < len(part_number_elements):
+                                                part_number_el = part_number_elements[part_idx]
+
+                                    if not clicked:
+                                        logger.warning(f"Failed to click part number: {part_number}")
+                                        all_details.append("<td>Click failed</td><td>0</td>")
+                                        continue
+
+                                    # Handle new window if opened
+                                    if len(sb.driver.window_handles) > 1:
+                                        sb.driver.switch_to.window(sb.driver.window_handles[-1])
+
+                                    # Wait for quantity input and add to cart
                                     try:
-                                        quantity_input = WebDriverWait(sb.driver, 15).until(
-                                            EC.presence_of_element_located((By.XPATH, "//input[starts-with(@id,'qtyInp')]"))
+                                        WebDriverWait(sb.driver, 10).until(
+                                            lambda d: d.find_elements(By.XPATH, "//input[contains(@id,'qty')]") or
+                                                    d.find_elements(By.XPATH, "//button[contains(.,'Add to Cart') or contains(.,'Add to Order')]")
                                         )
-                                        quantity_input.clear()
-                                        quantity_input.send_keys("1")
-                                        logger.debug("Quantity set to 1")
-                                    except TimeoutException:
-                                        logger.warning("Timeout waiting for quantity input")
-                                        raise
-                                    
-                                    # Click add to order
+
+                                        qty_input = WebDriverWait(sb.driver, 10).until(
+                                            EC.presence_of_element_located((
+                                                By.XPATH,
+                                                "//input[contains(@id,'qty') or contains(@name,'quantity')]"
+                                            ))
+                                        )
+                                        qty_input.clear()
+                                        qty_input.send_keys("1")
+
+                                        add_button = WebDriverWait(sb.driver, 15).until(
+                                            EC.element_to_be_clickable((
+                                                By.XPATH,
+                                                "//button[contains(.,'Add to Cart') or "
+                                                "contains(.,'Add to Order') or "
+                                                "contains(@id,'addToCart') or "
+                                                "contains(@id,'addToOrder') or "
+                                                "contains(@class,'add-to-cart') or "
+                                                "contains(@class,'add-to-order')]"
+                                            ))
+                                        )
+                                        sb.driver.execute_script("arguments[0].click();", add_button)
+
+                                        # Get delivery message
+                                        delivery_msg = WebDriverWait(sb.driver, 10).until(
+                                            EC.visibility_of_element_located((
+                                                By.XPATH,
+                                                "//div[contains(@class,'delivery')] | "
+                                                "//span[contains(@class,'delivery')] | "
+                                                "//div[contains(@class,'ship-date')] | "
+                                                "//div[contains(@class,'InLnOrdWebPartLayout_ItmAddedMsg')] | "
+                                                "//span[starts-with(@class,'DeliveryMessage_deliveryMessage')]"
+                                            ))
+                                        ).text
+                                        date_lines = delivery_msg.split('\n')
+                                        delivery_date = f"<td>{date_lines[1].strip()}</td>" if len(date_lines) > 1 else f"<td>{delivery_msg.strip()}</td>"
+                                    except Exception as e:
+                                        logger.warning(f"Error in delivery processing: {str(e)}")
+                                        delivery_date = "<td>Delivery date not available</td>"
+
+                                    extracted_date = f"<td>{int(datetime.now().timestamp())}</td>"
+                                    all_details.append(f"{delivery_date}{extracted_date}")
+
+                                    # Close popup or return to main page
                                     try:
-                                        add_to_order = WebDriverWait(sb.driver, 15).until(
-                                            EC.element_to_be_clickable((By.XPATH,
-                                            "//button[contains(@class,'button-add-to-order-inline add-to-order')]"))
+                                        close_button = WebDriverWait(sb.driver, 5).until(
+                                            EC.element_to_be_clickable((
+                                                By.XPATH,
+                                                "//div[contains(@class,'InLnOrdWebPartLayout_CloseIcon')] | "
+                                                "//img[starts-with(@class,'ClosingIcon_buttonImage')]"
+                                            ))
                                         )
-                                        add_to_order.click()
-                                        logger.debug("Clicked add to order button")
+                                        close_button.click()
+                                        WebDriverWait(sb.driver, 5).until_not(
+                                            EC.presence_of_element_located((
+                                                By.XPATH,
+                                                "//div[contains(@class,'InLnOrdWebPartLayout_CloseIcon')] | "
+                                                "//img[starts-with(@class,'ClosingIcon_buttonImage')]"
+                                            ))
+                                        )
                                     except:
-                                        sb.driver.execute_script("arguments[0].click();", add_to_order)
-                                        logger.debug("Used JS to click add to order")
-                                    
-                                    # Get delivery message
-                                    try:
-                                        delivery_msg = WebDriverWait(sb.driver, 15).until(
-                                            EC.presence_of_element_located((By.XPATH,
-                                            "//div[contains(@class,'InLnOrdWebPartLayout_ItmAddedMsg')]"))
-                                        )
-                                        delivery_text = delivery_msg.text.split('\n')
-                                        if len(delivery_text) > 1:
-                                            delivery_date = delivery_text[1].strip()
-                                        logger.debug(f"Got delivery date: {delivery_date}")
-                                    except TimeoutException:
-                                        logger.warning("Timeout waiting for delivery message")
-                                        raise
-                                    
-                                    # Try to close the dialog
-                                    try:
-                                        close_btn = sb.driver.find_element(By.XPATH, "//button[contains(@class,'close-button')]")
-                                        sb.driver.execute_script("arguments[0].click();", close_btn)
-                                        logger.debug("Closed dialog")
-                                    except:
-                                        sb.driver.back()
-                                        logger.debug("Used back navigation instead")
-                                        
+                                        pass
+
                                 except Exception as e:
-                                    logger.warning(f"Error processing part {part_number}: {str(e)}")
+                                    logger.warning(f"Part processing error: {str(e)}")
+                                    all_details.append("<td>Part processing error</td><td>0</td>")
+                                finally:
                                     try:
-                                        sb.driver.back()
-                                        logger.debug("Navigated back after error")
-                                    except:
-                                        logger.warning("Couldn't navigate back")
-                                
-                                delivery_dates.append(delivery_date)
-                            
-                            # Build row HTML
-                            cell_html = "".join([cell.get_attribute('outerHTML') for cell in cells])
-                            delivery_html = "".join([f"<td class='delivery-date'>{date}</td>" for date in delivery_dates])
-                            processed_rows.append(f"<tr>{cell_html}{delivery_html}</tr>")
-                        
-                        except StaleElementReferenceException:
-                            logger.warning("Stale element reference in row processing")
-                            continue
-                    
-                    # Add table to results
-                    processed_tables.append(f"<table>{type_html}{''.join(processed_rows)}</table>")
-                    logger.info(f"Completed processing table {table_idx}")
-                
+                                        if len(sb.driver.window_handles) > 1:
+                                            sb.driver.close()
+                                            sb.driver.switch_to.window(original_window)
+                                        else:
+                                            sb.go_back()
+                                            # Wait for table to reload
+                                            WebDriverWait(sb.driver, 10).until(
+                                                EC.presence_of_element_located((
+                                                    By.XPATH,
+                                                    "//table[contains(@class,'hn') or starts-with(@class,'ProductTable_table')]"
+                                                ))
+                                            )
+                                            # Refresh all references
+                                            tables = get_stable_tables()
+                                            table = tables[table_idx]
+                                            rows = get_stable_rows()
+                                    except Exception as e:
+                                        logger.warning(f"Error returning from part page: {e}")
+
+                            # Get fresh row HTML and append details
+                            rows = get_stable_rows()
+                            r = rows[row_idx]
+                            row_html = r.get_attribute('outerHTML')
+                            if all_details:
+                                row_html = row_html.replace("</tr>", f"{address}{''.join(all_details)}</tr>")
+                            all_row_data.append(row_html)
+
+                        except Exception as e:
+                            logger.warning(f"Row processing error: {str(e)}")
+                            all_row_data.append("<tr><td>Row processing error</td></tr>")
+
+                    # Process table HTML
+                    thead_rows = all_row_data[:2]
+                    tbody_rows = all_row_data[2:]
+
+                    if max_parts_in_any_row == 1:
+                        extra_headers = "<th>Address</th><th>Delivery Date</th><th>Extracted Date</th>"
+                    else:
+                        extra_headers = "<th>Address</th>"
+                        for i in range(1, max_parts_in_any_row + 1):
+                            extra_headers += f"<th>Delivery Date {i}</th><th>Extracted Date {i}</th>"
+
+                    for i, row in enumerate(thead_rows):
+                        if "<th" in row:
+                            thead_rows[i] = row.replace("</tr>", f"{extra_headers}</tr>")
+                            break
+
+                    table_html = f"""
+                        <table>
+                            <thead>
+                                {type_of_material_html}
+                                {''.join(thead_rows)}
+                            </thead>
+                            <tbody>
+                                {''.join(tbody_rows)}
+                            </tbody>
+                        </table>
+                    """
+                    all_tables_html.append(table_html)
+
                 except Exception as e:
-                    logger.error(f"Error processing table {table_idx}: {e}")
+                    logger.error(f"Error in table {table_idx + 1}: {str(e)}")
                     continue
-            
+
             elapsed_time = time.time() - start_time
             logger.info(f"Finished scraping in {elapsed_time:.2f} seconds")
-            
+
             return {
-                "tables": "\n".join(processed_tables),
-                "address": address,
-                "timestamp": int(datetime.now().timestamp()),
+                "status": "success",
+                "tables": all_tables_html,
+                "url": url,
+                "elapsed_time": elapsed_time
+            }
+
+        except Exception as e:
+            logger.error(f"Fatal error during scraping: {str(e)}", exc_info=True)
+            return {
+                "status": "failed",
+                "error": str(e),
                 "url": url
             }
-            
-        except Exception as e:
-            logger.error(f"Fatal error during scraping: {str(e)}")
-            return None
 
 def fetch_tables_html(url, crawl_id):
     """Main function to fetch tables and upload to S3."""
@@ -288,49 +377,47 @@ def fetch_tables_html(url, crawl_id):
         if not isinstance(url, list):
             url = [url]
         
-        all_results = []
+        all_tables_html = []
+        error_reports = []
         
         for single_url in url:
             logger.info(f"Processing URL: {single_url}")
             result = scrape_tables_with_delivery(single_url)
             
-            if result:
-                all_results.append(result)
+            if result and result.get("status") == "success" and result.get("tables"):
+                all_tables_html.extend(result['tables'])
                 logger.info(f"Successfully processed URL: {single_url}")
             else:
-                logger.warning(f"Failed to process URL: {single_url}")
+                error_msg = result.get("error", "No tables found") if result else "Scraping failed"
+                error_reports.append(f"URL: {single_url} - Error: {error_msg}")
+                logger.warning(f"Failed to process URL: {single_url} - {error_msg}")
         
-        if not all_results:
-            logger.error("No results obtained from any URLs")
-            return None
+        if not all_tables_html:
+            error_message = "No results obtained from any URLs. Details:\n" + "\n".join(error_reports)
+            logger.error(error_message)
+            return {
+                "status": "failed",
+                "error": error_message,
+                "crawl_id": crawl_id
+            }
         
         # Prepare HTML content
-        html_content = []
-        for result in all_results:
-            html_content.append(f"""
-            <div class="scraped-result">
-                <h3>Scraped from: <a href="{result['url']}">{result['url']}</a></h3>
-                <p>Location: {result['address']}</p>
-                <p>Timestamp: {result['timestamp']}</p>
-                <div class="tables">{result['tables']}</div>
-            </div>
-            """)
-        
         full_html = f"""
+        <!DOCTYPE html>
         <html>
             <head>
-                <title>Scraped Data - {crawl_id}</title>
+                <title>{url[0]}</title>
                 <style>
                     table {{ border-collapse: collapse; width: 100%; margin-bottom: 20px; }}
                     th, td {{ border: 1px solid #ddd; padding: 8px; text-align: left; }}
                     th {{ background-color: #f2f2f2; }}
-                    .delivery-date {{ color: #006600; font-weight: bold; }}
-                    .scraped-result {{ margin-bottom: 30px; border: 1px solid #ccc; padding: 15px; }}
                 </style>
             </head>
             <body>
-                <h1>Scraped Data - {crawl_id}</h1>
-                {''.join(html_content)}
+                <h1>Scraped Data from {url[0]}</h1>
+                <p>Crawl ID: {crawl_id}</p>
+                <p>Scraped at: {datetime.now().isoformat()}</p>
+                {''.join(all_tables_html)}
             </body>
         </html>
         """
@@ -353,11 +440,25 @@ def fetch_tables_html(url, crawl_id):
 
         if s3_url:
             logger.info(f"Successfully uploaded to S3: {s3_url}")
+            return {
+                "status": "success",
+                "s3_url": s3_url,
+                "crawl_id": crawl_id,
+                "local_path": local_file_path
+            }
         else:
             logger.error("Failed to upload to S3")
-
-        return s3_url
+            return {
+                "status": "failed",
+                "error": "S3 upload failed",
+                "crawl_id": crawl_id,
+                "local_path": local_file_path
+            }
 
     except Exception as e:
-        logger.error(f"Error in fetch_tables_html: {e}")
-        return None
+        logger.error(f"Error in fetch_tables_html: {str(e)}", exc_info=True)
+        return {
+            "status": "failed",
+            "error": str(e),
+            "crawl_id": crawl_id
+        }

@@ -29,12 +29,6 @@ def clean_html(html_content: str) -> str:
             tag.replace_with(NavigableString(tag.get_text(" ", strip=True)))
 
     for tag in soup.find_all(["div", "span", "a"]):
-        # if tag.name in ["thead", "table"]:
-        #     continue
-        # if not tag.get_text(strip=True):  
-        #     tag.extract()
-        # else:
-        #     preserve_text_before_removal(tag)
         if not tag.get_text(strip=True):  
             tag.extract()
         else:
@@ -56,19 +50,7 @@ def clean_html(html_content: str) -> str:
         merge_single_nested_tags(tag)
 
     return str(soup)
-# def ensure_thead_between_table_and_tbody(html: str) -> str:
-#     soup = BeautifulSoup(html, 'html.parser')
- 
-#     for table in soup.find_all("table"):
-#         tbody = table.find("tbody")
-#         thead = table.find("thead")
- 
-#         # If <tbody> exists and <thead> does not
-#         if tbody and not thead:
-#             new_thead = soup.new_tag("thead")
-#             tbody.insert_before(new_thead)
- 
-#     return str(soup)
+
 def ensure_thead_between_table_and_tbody(html: str) -> str:
     soup = BeautifulSoup(html, 'html.parser')
  
@@ -225,22 +207,23 @@ def process_and_clean_html(html_content: str) -> str:
     return fully_processed_html
 
 def build_block_tree(html_content, max_words=50):
-    cleaned_html = clean_html(html_content)
-    fixed_html = ensure_thead_between_table_and_tbody(cleaned_html)
-    fixed_html=ensure_tbody_after_thead(fixed_html)
-    # soup = BeautifulSoup(fixed_html, "html.parser")
-    fully_processed_html = multiple_tbody_in_table(fixed_html)
-    return fully_processed_html
+    # cleaned_html = clean_html(html_content)
+    # fixed_html = ensure_thead_between_table_and_tbody(cleaned_html)
+    # fixed_html=ensure_tbody_after_thead(fixed_html)
+    # # soup = BeautifulSoup(fixed_html, "html.parser")
+    # fully_processed_html = multiple_tbody_in_table(fixed_html)
+    # return fully_processed_html
 
     # return str(soup)
-
+    block_tree_html = process_and_clean_html(html_content)
+    return block_tree_html
 
 import os
 # Function to download and clean HTML file from S3
 def clean_html_task(bucket_name, file_key):
     local_path = f"./temp/{file_key.split('/')[-1]}"
     if not os.path.exists(local_path):
-        # print(f"File not found locally, downloading from S3: {file_key}")
+    
         s3_client.download_file(bucket_name, file_key, local_path)
 
     try:
@@ -249,8 +232,8 @@ def clean_html_task(bucket_name, file_key):
     except Exception as e:
         return {"error": f"Failed to read local file: {e}"}
 
-    # Clean the HTML
+
     block_tree_html = build_block_tree(sample_html)
     # cleaned_html = clean_html(sample_html)
-    # print(f"Cleaned HTML length: {block_tree_html} characters")
+    print(f"Cleaned HTML length: {block_tree_html} characters")
     return block_tree_html

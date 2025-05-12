@@ -3,9 +3,6 @@ import asyncio
 import json
 import redis
 from urllib.parse import urlparse
-from html_scraping import scrape_html
-from pdf_scraping import scrape_pdfs
-from image_scraping import scrape_images
 from table_scraping import fetch_tables_html
 from table_parsing import parse_task
   
@@ -38,33 +35,33 @@ def scrape_tables_task(url, crawl_id):
         return {"url": url, "status": "failed", "error": str(e), "crawl_id": crawl_id}
 
 
-@celery_app.task
-def scrape_pdfs_task(url, crawl_id):
-    print(f"Scraping PDFs from: {url}")
-    try:
-        scrape_pdfs(url)
-        return {"url": url, "status": "completed", "crawl_id": crawl_id}
-    except Exception as e:
-        return {"url": url, "status": "failed", "error": str(e), "crawl_id": crawl_id}
+# @celery_app.task
+# def scrape_pdfs_task(url, crawl_id):
+#     print(f"Scraping PDFs from: {url}")
+#     try:
+#         scrape_pdfs(url)
+#         return {"url": url, "status": "completed", "crawl_id": crawl_id}
+#     except Exception as e:
+#         return {"url": url, "status": "failed", "error": str(e), "crawl_id": crawl_id}
 
-@celery_app.task
-def scrape_images_task(url, crawl_id):
-    print(f"Scraping images from: {url}")
-    try:
-        asyncio.run(scrape_images(url))  
-        return {"url": url, "status": "completed", "crawl_id": crawl_id}
-    except Exception as e:
-        return {"url": url, "status": "failed", "error": str(e), "crawl_id": crawl_id}
+# @celery_app.task
+# def scrape_images_task(url, crawl_id):
+#     print(f"Scraping images from: {url}")
+#     try:
+#         asyncio.run(scrape_images(url))  
+#         return {"url": url, "status": "completed", "crawl_id": crawl_id}
+#     except Exception as e:
+#         return {"url": url, "status": "failed", "error": str(e), "crawl_id": crawl_id}
 
 
-@celery_app.task
-def scrape_html_task(url, crawl_id, output_folder="/path/to/output"):
-    print(f"Scraping HTML content from: {url}")
-    try:
-        scrape_html(url, output_folder)  
-        return {"url": url, "status": "completed", "crawl_id": crawl_id}
-    except Exception as e:
-        return {"url": url, "status": "failed", "error": str(e), "crawl_id": crawl_id}
+# @celery_app.task
+# def scrape_html_task(url, crawl_id, output_folder="/path/to/output"):
+#     print(f"Scraping HTML content from: {url}")
+#     try:
+#         scrape_html(url, output_folder)  
+#         return {"url": url, "status": "completed", "crawl_id": crawl_id}
+#     except Exception as e:
+#         return {"url": url, "status": "failed", "error": str(e), "crawl_id": crawl_id}
 
 
 @celery_app.task(name="process_batch")
@@ -91,12 +88,12 @@ def process_batch(batch_key, bucket_name):
         try:
             if schema_type == "table":
                 result = scrape_tables_task(url, crawl_id)
-            elif schema_type == "pdf":
-                result = scrape_pdfs_task(url, crawl_id)
-            elif schema_type == "image":
-                result = scrape_images_task(url, crawl_id)
-            elif schema_type == "html":
-                result = scrape_html_task(url, crawl_id)
+            # elif schema_type == "pdf":
+            #     result = scrape_pdfs_task(url, crawl_id)
+            # elif schema_type == "image":
+            #     result = scrape_images_task(url, crawl_id)
+            # elif schema_type == "html":
+            #     result = scrape_html_task(url, crawl_id)
             else:
                 result = {"url": url, "error": "Invalid schema type"}
 
