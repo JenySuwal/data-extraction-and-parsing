@@ -1,13 +1,18 @@
 from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, Query
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 import hashlib
 import uuid
+from pydantic import HttpUrl
 import redis
 import json
 from celery_tasks_for_scraping import celery_app, process_batch
 from table_parsing import parse_task
 from typing import List
 from fastapi.middleware.cors import CORSMiddleware
+from download_from_s3 import download_entire_parsed_data_as_zip
+from scrape_links import scrape_links_from_url
 
 app = FastAPI()
 
@@ -50,6 +55,19 @@ def update_status(crawl_id: str, status: str, error_message: str = None):
         status_data["error"] = error_message
     redis_client.set(f"status_{crawl_id}", json.dumps(status_data))
 INPUT_BUCKET = "scraped-unstructured-data"
+
+@app.get("/scrape-links", response_model=List[str])
+def scrape_links(url: HttpUrl = Query(..., description="URL to scrape")):
+    links = scrape_links_from_url(str(url))
+    
+    if links:
+        output_file = "scraped_links.txt"
+        with open(output_file, "w") as f:
+            for link in links:
+                f.write(f'"{link}",\n')
+        print(f"\n🔗 Saved to {output_file}")
+    
+    return links
 import logging
 logging.basicConfig(level=logging.INFO)
 @app.post("/scraping-data/")
@@ -138,12 +156,7 @@ def start_parse(bucket_name: str, file_key: str):
     task = parse_task.apply_async(args=[bucket_name, file_key], queue="parsing_queue")
     return {"message": "Parse task started", "task_id": task.id}
 
-# # Trigger parsing after upload
-# if s3_url:
-#     print(f"Triggering parsing task for {s3_url}")
-#     parse_task.apply_async(args=[INPUT_BUCKET, s3_path], queue="parsing_queue")
-# else:
-#     print("Error: No S3 URL returned, parsing will not be triggered.")
+
 @app.post("/retry-failed/")  
 async def retry_failed_urls():
     failed_urls = []
@@ -177,3 +190,12 @@ async def check_status(crawl_id: str):
         return json.loads(status_data)
     return {"status": "unknown", "message": "Crawl ID not found"}
 
+@app.get("/download-zip")
+def download_zip(
+    bucket_name: str = Query("parsed-structured-data", description="S3 bucket name"),
+    prefix: str = Query("Round-head6/", description="S3 prefix path"),
+    zip_file_name: str = Query("Round-head6.zip", description="Name for the output zip file"),
+):
+    local_path = './S3_downloads/'
+    zip_path = download_entire_parsed_data_as_zip(bucket_name, prefix, zip_file_name, local_path)
+    return FileResponse(path=zip_path, filename=zip_file_name, media_type='application/zip')
